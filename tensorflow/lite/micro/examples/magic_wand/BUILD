@@ -1,33 +1,18 @@
 # Description:
 #   TensorFlow Lite for Microcontrollers "gesture recognition" example.
-load("//tensorflow/lite/micro:build_def.bzl","generate_cc_arrays")
-
 package(
     default_visibility = ["//visibility:public"],
-    # Disabling layering_check because of http://b/177257332
     features = ["-layering_check"],
     licenses = ["notice"],
-)
-
-generate_cc_arrays(
-    name="generated_magic_wand_model_cc",
-    src="magic_wand.tflite",
-    out="magic_wand_model_data.cc",
-)
-
-generate_cc_arrays(
-    name="generated_magic_wand_model_hdr",
-    src="magic_wand.tflite",
-    out="magic_wand_model_data.h",
 )
 
 cc_library(
     name = "magic_wand_model_data",
     srcs = [
-        ":generated_magic_wand_model_cc",
+        "magic_wand_model_data.cc",
     ],
     hdrs = [
-        ":generated_magic_wand_model_hdr",
+        "magic_wand_model_data.h",
     ],
 )
 

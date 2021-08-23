@@ -32,7 +32,8 @@ namespace {
 TfLiteStatus CalculatePreluParams(const TfLiteTensor* input,
                                   const TfLiteTensor* alpha,
                                   TfLiteTensor* output, PreluParams* params) {
-  if (output->type == kTfLiteInt8 || output->type == kTfLiteInt16) {
+  if (output->type == kTfLiteInt8 || output->type == kTfLiteUInt8 ||
+      output->type == kTfLiteInt16) {
     double real_multiplier_1 = static_cast<double>(input->params.scale) /
                                static_cast<double>(output->params.scale);
     double real_multiplier_2 = static_cast<double>(input->params.scale) *
@@ -120,6 +121,16 @@ TfLiteStatus PreluEval(TfLiteContext* context, TfLiteNode* node) {
                                 tflite::micro::GetTensorData<float>(alpha),
                                 tflite::micro::GetTensorShape(output),
                                 tflite::micro::GetTensorData<float>(output));
+      return kTfLiteOk;
+    } break;
+    case kTfLiteUInt8: {
+      reference_ops::BroadcastPrelu4DSlow(
+          params, tflite::micro::GetTensorShape(input),
+          tflite::micro::GetTensorData<uint8_t>(input),
+          tflite::micro::GetTensorShape(alpha),
+          tflite::micro::GetTensorData<uint8_t>(alpha),
+          tflite::micro::GetTensorShape(output),
+          tflite::micro::GetTensorData<uint8_t>(output));
       return kTfLiteOk;
     } break;
     case kTfLiteInt8: {

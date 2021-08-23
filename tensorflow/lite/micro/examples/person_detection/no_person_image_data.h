@@ -13,8 +13,18 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
-#include "tensorflow/lite/micro/examples/hello_world/main_functions.h"
+// This data was created from a sample image from without a person in it.
+// Convert original image to simpler format:
+// convert -resize 96x96\! noperson.PNG noperson.bmp3
+// Skip the 54 byte bmp3 header and add the reset of the bytes to a C array:
+// xxd -s 54 -i /tmp/noperson.bmp3 > /tmp/noperson.cc
 
-// Arduino automatically calls the setup() and loop() functions in a sketch, so
-// where other systems need their own main routine in this file, it can be left
-// empty.
+#ifndef TENSORFLOW_LITE_MICRO_EXAMPLES_PERSON_DETECTION_NO_PERSON_IMAGE_DATA_H_
+#define TENSORFLOW_LITE_MICRO_EXAMPLES_PERSON_DETECTION_NO_PERSON_IMAGE_DATA_H_
+
+#include <cstdint>
+
+extern const int g_no_person_data_size;
+extern const uint8_t g_no_person_data[];
+
+#endif  // TENSORFLOW_LITE_MICRO_EXAMPLES_PERSON_DETECTION_NO_PERSON_IMAGE_DATA_H_

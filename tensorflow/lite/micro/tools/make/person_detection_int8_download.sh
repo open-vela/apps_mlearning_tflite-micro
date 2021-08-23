@@ -1,5 +1,5 @@
 #!/bin/bash
-# Copyright 2019 The TensorFlow Authors. All Rights Reserved.
+# Copyright 2021 The TensorFlow Authors. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,12 +14,9 @@
 # limitations under the License.
 # ==============================================================================
 #
-# Downloads necessary to build with OPTIMIZED_KERNEL_DIR=xtensa.
-#
-# Called with four arguments:
+# Called with following arguments:
 # 1 - Path to the downloads folder which is typically
 #     tensorflow/lite/micro/tools/make/downloads
-# 2 - Xtensa variant to download for (e.g. hifi4)
 #
 # This script is called from the Makefile and uses the following convention to
 # enable determination of sucess/failure:
@@ -35,7 +32,7 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ROOT_DIR=${SCRIPT_DIR}/../../../../../..
+ROOT_DIR=${SCRIPT_DIR}/../../../../..
 cd "${ROOT_DIR}"
 
 source tensorflow/lite/micro/tools/make/bash_helpers.sh
@@ -46,35 +43,17 @@ if [ ! -d ${DOWNLOADS_DIR} ]; then
   exit 1
 fi
 
-if [[ ${2} == "hifi4" ]]; then
-  LIBRARY_URL="http://github.com/foss-xtensa/nnlib-hifi4/raw/master/archive/xa_nnlib_hifi4_07_27_2021.zip"
-  LIBRARY_DIRNAME="xa_nnlib_hifi4"
-  LIBRARY_MD5="24b8844f8e0c53c1ed8561b09968bb98"
-elif [[ ${2} == "hifi5" ]]; then
-  LIBRARY_URL="http://github.com/foss-xtensa/nnlib-hifi5/raw/master/archive/xa_nnlib_hifi5_06_30.zip"
-  LIBRARY_DIRNAME="xa_nnlib_hifi5"
-  LIBRARY_MD5="0c832b15d27ac557fa5453c902c5662a"
+DOWNLOADED_PERSON_MODEL_INT8_PATH=${DOWNLOADS_DIR}/person_model_int8
+if [ -d ${DOWNLOADED_PERSON_MODEL_INT8_PATH} ]; then
+  echo >&2 "${DOWNLOADED_PERSON_MODEL_INT8_PATH} already exists, skipping the download."
 else
-  echo "Attempting to download an unsupported xtensa variant: ${2}"
-  exit 1
-fi
+  PERSON_MODEL_INT8_URL=https://storage.googleapis.com/download.tensorflow.org/data/tf_lite_micro_person_data_int8_grayscale_2020_12_1.zip
+  EXPECTED_MD5=e765cc76889db8640cfe876a37e4ec00
 
-LIBRARY_INSTALL_PATH=${DOWNLOADS_DIR}/${LIBRARY_DIRNAME}
-
-if [ -d ${LIBRARY_INSTALL_PATH} ]; then
-  echo >&2 "${LIBRARY_INSTALL_PATH} already exists, skipping the download."
-else
-  TMP_ZIP_ARCHIVE_NAME="${LIBRARY_DIRNAME}.zip"
-  wget ${LIBRARY_URL} -O /tmp/${TMP_ZIP_ARCHIVE_NAME} >&2
-  MD5=`md5sum /tmp/${TMP_ZIP_ARCHIVE_NAME} | awk '{print $1}'`
-
-  if [[ ${MD5} != ${LIBRARY_MD5} ]]
-  then
-    echo "Bad checksum. Expected: ${LIBRARY_MD5}, Got: ${MD5}"
-    exit 1
-  fi
-
-  unzip -qo /tmp/${TMP_ZIP_ARCHIVE_NAME} -d ${DOWNLOADS_DIR} >&2
+  TEMPFILE=$(mktemp -d)/temp_file
+  wget ${PERSON_MODEL_INT8_URL} -O ${TEMPFILE} >&2
+  check_md5 ${TEMPFILE} ${EXPECTED_MD5}
+  unzip ${TEMPFILE} -d ${DOWNLOADS_DIR} >&2
 
 fi
 

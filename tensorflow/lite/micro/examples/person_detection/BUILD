@@ -1,10 +1,7 @@
 # Description:
 #   TensorFlow Lite for Microcontrollers Vision Example.
-load("//tensorflow/lite/micro:build_def.bzl","generate_cc_arrays")
-
 package(
     default_visibility = ["//visibility:public"],
-    # Disabling layering_check because of http://b/177257332
     features = ["-layering_check"],
     licenses = ["notice"],
 )
@@ -19,49 +16,31 @@ cc_library(
     ],
 )
 
-generate_cc_arrays(
-    name="generated_no_person_bmp_cc",
-    src="testdata/no_person.bmp",
-    out="testdata/no_person_image_data.cc",
-)
-
-generate_cc_arrays(
-    name="generated_no_person_bmp_hdr",
-    src="testdata/no_person.bmp",
-    out="testdata/no_person_image_data.h",
-)
-
-generate_cc_arrays(
-    name="generated_person_bmp_cc",
-    src="testdata/person.bmp",
-    out="testdata/person_image_data.cc",
-)
-
-generate_cc_arrays(
-    name="generated_person_bmp_hdr",
-    src="testdata/person.bmp",
-    out="testdata/person_image_data.h",
-)
-
 cc_library(
     name = "person_detect_model_data",
     srcs = [
-        "//tensorflow/lite/micro/models:generated_person_detect_model_cc",
+        "@person_detect_data//:person_detect_model_data",
     ],
     hdrs = [
-        "//tensorflow/lite/micro/models:generated_person_detect_model_hdr",
+        "person_detect_model_data.h",
+    ],
+    tags = [
+        "no_oss",  # TODO(b/174680668): Exclude from OSS.
     ],
 )
 
 cc_library(
     name = "simple_images_test_data",
     srcs = [
-        ":generated_person_bmp_cc",
-        ":generated_no_person_bmp_cc",
+        "no_person_image_data.cc",
+        "person_image_data.cc",
     ],
     hdrs = [
-        ":generated_person_bmp_hdr",
-        ":generated_no_person_bmp_hdr",
+        "no_person_image_data.h",
+        "person_image_data.h",
+    ],
+    tags = [
+        "no_oss",  # TODO(b/174680668): Exclude from OSS.
     ],
     deps = [
         ":model_settings",
@@ -71,6 +50,9 @@ cc_library(
 cc_test(
     name = "person_detection_test",
     srcs = ["person_detection_test.cc"],
+    tags = [
+        "no_oss",  # TODO(b/174680668): Exclude from OSS.
+    ],
     deps = [
         ":model_settings",
         ":person_detect_model_data",
@@ -144,6 +126,9 @@ cc_binary(
         "main.cc",
         "main_functions.cc",
         "main_functions.h",
+    ],
+    tags = [
+        "no_oss",  # TODO(b/174680668): Exclude from OSS.
     ],
     deps = [
         ":detection_responder",

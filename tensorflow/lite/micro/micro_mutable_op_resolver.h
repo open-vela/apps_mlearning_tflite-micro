@@ -159,7 +159,8 @@ class MicroMutableOpResolver : public MicroOpResolver {
   }
 
   TfLiteStatus AddCircularBuffer() {
-    return AddCustom("CIRCULAR_BUFFER", tflite::Register_CIRCULAR_BUFFER());
+    return AddCustom("CIRCULAR_BUFFER",
+                     tflite::ops::micro::Register_CIRCULAR_BUFFER());
   }
 
   TfLiteStatus AddConcatenation() {
@@ -522,12 +523,6 @@ class MicroMutableOpResolver : public MicroOpResolver {
                       tflite::ops::micro::Register_UNPACK(), ParseUnpack);
   }
 
-  TfLiteStatus AddUnidirectionalSequenceLSTM() {
-    return AddBuiltin(
-        BuiltinOperator_UNIDIRECTIONAL_SEQUENCE_LSTM,
-        tflite::ops::micro::Register_UNIDIRECTIONAL_SEQUENCE_LSTM(),
-        ParseUnidirectionalSequenceLSTM);
-  }
   TfLiteStatus AddZerosLike() {
     return AddBuiltin(BuiltinOperator_ZEROS_LIKE, Register_ZEROS_LIKE(),
                       ParseZerosLike);

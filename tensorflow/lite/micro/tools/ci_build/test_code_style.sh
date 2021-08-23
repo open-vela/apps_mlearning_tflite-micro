@@ -47,16 +47,14 @@ micro/tools/make/downloads/pigweed/pw_presubmit/py/pw_presubmit/pigweed_presubmi
   -e tools/make/targets/ecm3531 \
   -e BUILD\
   -e leon_commands \
-  -e "\.bmp" \
   -e "\.bzl" \
   -e "\.h5" \
-  -e "\.inc" \
   -e "\.ipynb" \
+  -e "\.inc" \
   -e "\.patch" \
   -e "\.properties" \
-  -e "\.tflite" \
-  -e "\.tpl" \
   -e "\.txt" \
+  -e "\.tpl" \
   --output-directory /tmp
 
 LICENSE_CHECK_RESULT=$?

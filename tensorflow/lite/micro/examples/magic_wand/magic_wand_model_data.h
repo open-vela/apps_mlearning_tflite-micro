@@ -13,13 +13,15 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
-#ifndef TENSORFLOW_LITE_MICRO_EXAMPLES_PERSON_DETECTION_ARDUINO_HM01B0_PLATFORM_H_
-#define TENSORFLOW_LITE_MICRO_EXAMPLES_PERSON_DETECTION_ARDUINO_HM01B0_PLATFORM_H_
+// This is a standard TensorFlow Lite model file that has been converted into a
+// C data array, so it can be easily compiled into a binary for devices that
+// don't have a file system. It was created using the command:
+// xxd -i magic_wand_model.tflite > magic_wand_model_data.cc
 
-#if defined(ARDUINO) && defined(ARDUINO_SFE_EDGE)
-#include "hm01b0_platform_edge.h"
-#define HM01B0_PIN_TRIG 0  // unused
-#define HM01B0_PIN_INT 0   // unused
-#endif                     // defined(ARDUINO) && defined(ARDUINO_SFE_EDGE)
+#ifndef TENSORFLOW_LITE_MICRO_EXAMPLES_MAGIC_WAND_MAGIC_WAND_MODEL_DATA_H_
+#define TENSORFLOW_LITE_MICRO_EXAMPLES_MAGIC_WAND_MAGIC_WAND_MODEL_DATA_H_
 
-#endif  // TENSORFLOW_LITE_MICRO_EXAMPLES_PERSON_DETECTION_ARDUINO_HM01B0_PLATFORM_H_
+extern const unsigned char g_magic_wand_model_data[];
+extern const int g_magic_wand_model_data_len;
+
+#endif  // TENSORFLOW_LITE_MICRO_EXAMPLES_MAGIC_WAND_MAGIC_WAND_MODEL_DATA_H_
