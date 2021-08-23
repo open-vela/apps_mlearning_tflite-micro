@@ -1,5 +1,4 @@
 package(
-    # Disabling layering_check because of http://b/177257332
     features = ["-layering_check"],
     licenses = ["notice"],
 )
@@ -56,6 +55,9 @@ cc_binary(
 cc_binary(
     name = "person_detection_benchmark",
     srcs = ["person_detection_benchmark.cc"],
+    tags = [
+        "no_oss",  # TODO(b/174680668): Exclude from OSS.
+    ],
     deps = [
         ":micro_benchmark",
         "//tensorflow/lite/c:common",

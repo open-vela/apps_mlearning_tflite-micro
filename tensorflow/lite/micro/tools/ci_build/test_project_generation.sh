@@ -49,10 +49,9 @@ popd > /dev/null
 
 rm -rf ${TEST_OUTPUT_DIR}
 
-# Remove existing state prior to testing project generation for cortex-m target.
-make -f tensorflow/lite/micro/tools/make/Makefile clean clean_downloads
-
+# Check that we can export a TFLM tree with additional makefile options.
 TEST_OUTPUT_DIR_CMSIS=$(mktemp -d)
+
 
 readable_run \
   python3 tensorflow/lite/micro/tools/project_generation/create_tflm_tree.py \
@@ -61,6 +60,10 @@ readable_run \
   ${EXAMPLES}
 
 readable_run cp tensorflow/lite/micro/tools/project_generation/Makefile ${TEST_OUTPUT_DIR_CMSIS}
+
+#readable_run \
+#  tensorflow/lite/micro/tools/make/arm_gcc_download.sh \
+#  ${TEST_OUTPUT_DIR_CMSIS}
 
 pushd ${TEST_OUTPUT_DIR_CMSIS} > /dev/null
 

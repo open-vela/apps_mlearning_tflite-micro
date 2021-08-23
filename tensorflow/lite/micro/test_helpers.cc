@@ -64,8 +64,6 @@ class StackAllocator : public flatbuffers::Allocator {
   uint8_t data_backing_[kStackAllocatorSize];
   uint8_t* data_;
   int data_size_;
-
-  TF_LITE_REMOVE_VIRTUAL_DELETE
 };
 
 flatbuffers::FlatBufferBuilder* BuilderInstance() {
