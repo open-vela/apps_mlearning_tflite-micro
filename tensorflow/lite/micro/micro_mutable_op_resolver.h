@@ -26,6 +26,7 @@ limitations under the License.
 #include "tensorflow/lite/micro/kernels/add.h"
 #include "tensorflow/lite/micro/kernels/conv.h"
 #include "tensorflow/lite/micro/kernels/depthwise_conv.h"
+#include "tensorflow/lite/micro/kernels/dequantize.h"
 #include "tensorflow/lite/micro/kernels/ethosu.h"
 #include "tensorflow/lite/micro/kernels/fully_connected.h"
 #include "tensorflow/lite/micro/kernels/micro_ops.h"
@@ -217,8 +218,9 @@ class MicroMutableOpResolver : public MicroOpResolver {
                       ParseDepthwiseConv2D);
   }
 
-  TfLiteStatus AddDequantize() {
-    return AddBuiltin(BuiltinOperator_DEQUANTIZE, tflite::Register_DEQUANTIZE(),
+  TfLiteStatus AddDequantize(
+      const TFLMRegistration& registration = Register_DEQUANTIZE()) {
+    return AddBuiltin(BuiltinOperator_DEQUANTIZE, registration,
                       ParseDequantize);
   }
 
