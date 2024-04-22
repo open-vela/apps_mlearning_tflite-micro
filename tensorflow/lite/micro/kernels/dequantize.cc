@@ -76,9 +76,30 @@ TfLiteStatus DequantizeEval(TfLiteContext* context, TfLiteNode* node) {
   return kTfLiteOk;
 }
 
+TfLiteStatus DequantizeEvalInt8(TfLiteContext* context, TfLiteNode* node) {
+  TFLITE_DCHECK(node->user_data != nullptr);
+  DequantizeOpData* data = static_cast<DequantizeOpData*>(node->user_data);
+
+  const TfLiteEvalTensor* input = tflite::micro::GetEvalInput(context, node, 0);
+  TfLiteEvalTensor* output = tflite::micro::GetEvalOutput(context, node, 0);
+
+  TFLITE_DCHECK(input->type == kTfLiteInt8 && output->type == kTfLiteFloat32);
+  reference_ops::Dequantize(data->quantization_params,
+                            tflite::micro::GetTensorShape(input),
+                            tflite::micro::GetTensorData<int8_t>(input),
+                            tflite::micro::GetTensorShape(output),
+                            tflite::micro::GetTensorData<float>(output));
+  return kTfLiteOk;
+}
+
 TFLMRegistration Register_DEQUANTIZE() {
   return tflite::micro::RegisterOp(DequantizeInit, DequantizePrepare,
                                    DequantizeEval);
+}
+
+TFLMRegistration Register_DEQUANTIZE_INT8() {
+  return tflite::micro::RegisterOp(DequantizeInit, DequantizePrepare,
+                                   DequantizeEvalInt8);
 }
 
 }  // namespace tflite
