@@ -49,6 +49,11 @@ TfLiteStatus EvalMean(TfLiteContext* context, TfLiteNode* node) {
                         static_cast<OpDataReduce*>(node->user_data));
 }
 
+TfLiteStatus EvalMeanInt8(TfLiteContext* context, TfLiteNode* node) {
+  return EvalMeanHelperInt8(context, node,
+                            static_cast<OpDataReduce*>(node->user_data));
+}
+
 TfLiteStatus EvalMax(TfLiteContext* context, TfLiteNode* node) {
   OpDataReduce* op_data = static_cast<OpDataReduce*>(node->user_data);
   return EvalMaxHelper(context, node, op_data);
@@ -61,6 +66,10 @@ TfLiteStatus EvalSum(TfLiteContext* context, TfLiteNode* node) {
 
 TFLMRegistration Register_MEAN() {
   return tflite::micro::RegisterOp(InitReduce, PrepareMeanOrSum, EvalMean);
+}
+
+TFLMRegistration Register_MEAN_INT8() {
+  return tflite::micro::RegisterOp(InitReduce, PrepareMeanOrSum, EvalMeanInt8);
 }
 
 TFLMRegistration Register_REDUCE_MAX() {
