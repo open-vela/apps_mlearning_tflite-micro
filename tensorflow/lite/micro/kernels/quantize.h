@@ -17,6 +17,7 @@ limitations under the License.
 
 #include "tensorflow/lite/c/common.h"
 #include "tensorflow/lite/kernels/internal/types.h"
+#include "tensorflow/lite/micro/micro_common.h"
 
 namespace tflite {
 
@@ -31,7 +32,10 @@ struct OpDataQuantizeReference {
 };
 
 TfLiteStatus EvalQuantizeReference(TfLiteContext* context, TfLiteNode* node);
+TfLiteStatus EvalQuantizeReferenceFloat32ToInt8(TfLiteContext* context, TfLiteNode* node);
 TfLiteStatus PrepareQuantizeReference(TfLiteContext* context, TfLiteNode* node);
+
+TFLMRegistration Register_QUANTIZE_FLOAT32_INT8();
 }  // namespace tflite
 
 #endif  // TENSORFLOW_LITE_MICRO_KERNELS_QUANTIZE_H_
