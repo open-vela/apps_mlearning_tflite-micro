@@ -32,6 +32,7 @@ limitations under the License.
 #include "tensorflow/lite/micro/kernels/micro_ops.h"
 #include "tensorflow/lite/micro/kernels/mul.h"
 #include "tensorflow/lite/micro/kernels/pooling.h"
+#include "tensorflow/lite/micro/kernels/quantize.h"
 #include "tensorflow/lite/micro/kernels/reduce.h"
 #include "tensorflow/lite/micro/kernels/softmax.h"
 #include "tensorflow/lite/micro/kernels/transpose_conv.h"
@@ -481,9 +482,9 @@ class MicroMutableOpResolver : public MicroOpResolver {
                       ParsePrelu);
   }
 
-  TfLiteStatus AddQuantize() {
-    return AddBuiltin(BuiltinOperator_QUANTIZE, Register_QUANTIZE(),
-                      ParseQuantize);
+  TfLiteStatus AddQuantize(
+      const TFLMRegistration& registration = Register_QUANTIZE()) {
+    return AddBuiltin(BuiltinOperator_QUANTIZE, registration, ParseQuantize);
   }
 
   TfLiteStatus AddReadVariable() {

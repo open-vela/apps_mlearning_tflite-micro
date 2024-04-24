@@ -39,4 +39,9 @@ TFLMRegistration Register_QUANTIZE() {
       InitQuantizeReference, PrepareQuantizeReference, EvalQuantizeReference);
 }
 
+TFLMRegistration Register_QUANTIZE_FLOAT32_INT8() {
+  return tflite::micro::RegisterOp(
+      InitQuantizeReference, PrepareQuantizeReference, EvalQuantizeReferenceFloat32ToInt8);
+}
+
 }  // namespace tflite

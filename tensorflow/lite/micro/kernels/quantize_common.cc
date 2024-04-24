@@ -236,4 +236,20 @@ TfLiteStatus EvalQuantizeReference(TfLiteContext* context, TfLiteNode* node) {
   return kTfLiteOk;
 }
 
+TfLiteStatus EvalQuantizeReferenceFloat32ToInt8(TfLiteContext* context, TfLiteNode* node) {
+  TFLITE_DCHECK(node->user_data != nullptr);
+  auto* data = static_cast<OpDataQuantizeReference*>(node->user_data);
+
+  const TfLiteEvalTensor* input = tflite::micro::GetEvalInput(context, node, 0);
+  TfLiteEvalTensor* output = tflite::micro::GetEvalOutput(context, node, 0);
+
+  TFLITE_DCHECK(input->type == kTfLiteFloat32 && output->type == kTfLiteInt8);
+  reference_ops::AffineQuantize(
+      data->quantization_params, tflite::micro::GetTensorShape(input),
+      tflite::micro::GetTensorData<float>(input),
+      tflite::micro::GetTensorShape(output),
+      tflite::micro::GetTensorData<int8_t>(output));
+  return kTfLiteOk;
+}
+
 }  // namespace tflite
