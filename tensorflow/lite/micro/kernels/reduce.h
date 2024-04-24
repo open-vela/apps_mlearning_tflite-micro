@@ -50,6 +50,8 @@ TfLiteStatus EvalMaxHelper(TfLiteContext* context, TfLiteNode* node,
                            OpDataReduce* op_data);
 TfLiteStatus EvalMeanHelper(TfLiteContext* context, TfLiteNode* node,
                             OpDataReduce* op_data);
+TfLiteStatus EvalMeanHelperInt8(TfLiteContext* context, TfLiteNode* node,
+                                OpDataReduce* op_data);
 TfLiteStatus EvalSumHelper(TfLiteContext* context, TfLiteNode* node,
                            OpDataReduce* op_data);
 
@@ -57,6 +59,7 @@ void ReduceResolveAxis(const int* axis_data, int axis_count,
                        MeanParams* op_params);
 
 TFLMRegistration Register_MEAN();
+TFLMRegistration Register_MEAN_INT8();
 TFLMRegistration Register_REDUCE_MAX();
 TFLMRegistration Register_SUM();
 

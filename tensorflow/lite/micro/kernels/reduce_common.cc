@@ -236,6 +236,22 @@ TfLiteStatus EvalMeanHelper(TfLiteContext* context, TfLiteNode* node,
   return kTfLiteOk;
 }
 
+TfLiteStatus EvalMeanHelperInt8(TfLiteContext* context, TfLiteNode* node,
+                                OpDataReduce* op_data) {
+  const TfLiteEvalTensor* input = tflite::micro::GetEvalInput(context, node, 0);
+  const TfLiteEvalTensor* axis = tflite::micro::GetEvalInput(context, node, 1);
+
+  int num_axis = static_cast<int>(ElementCount(*axis->dims));
+  int temp_index[kMaxNumberOfAxis];
+  int resolved_axis[kMaxNumberOfReducedAxis];
+
+  TFLITE_DCHECK(input->type == kTfLiteInt8);
+  TF_LITE_ENSURE_OK(
+      context, EvalIntegerMean<int8_t>(context, node, num_axis, op_data,
+                                        temp_index, resolved_axis));
+  return kTfLiteOk;
+}
+
 TfLiteStatus EvalMaxHelper(TfLiteContext* context, TfLiteNode* node,
                            OpDataReduce* op_data) {
   const TfLiteEvalTensor* input = tflite::micro::GetEvalInput(context, node, 0);

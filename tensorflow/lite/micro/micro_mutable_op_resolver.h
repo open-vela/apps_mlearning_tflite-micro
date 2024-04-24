@@ -432,8 +432,9 @@ class MicroMutableOpResolver : public MicroOpResolver {
                       ParseMirrorPad);
   }
 
-  TfLiteStatus AddMean() {
-    return AddBuiltin(BuiltinOperator_MEAN, Register_MEAN(), ParseReducer);
+  TfLiteStatus AddMean(
+      const TFLMRegistration& registration = Register_MEAN()) {
+    return AddBuiltin(BuiltinOperator_MEAN, registration, ParseReducer);
   }
 
   TfLiteStatus AddMinimum() {
