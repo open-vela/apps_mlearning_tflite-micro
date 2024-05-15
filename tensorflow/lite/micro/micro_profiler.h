@@ -69,7 +69,7 @@ class MicroProfiler : public MicroProfilerInterface {
   // Maximum number of events that this class can keep track of. The
   // MicroProfiler will abort if AddEvent is called more than kMaxEvents number
   // of times. Increase this number if you need more events.
-  static constexpr int kMaxEvents = 4096;
+  static constexpr int kMaxEvents = 64;
 
   const char* tags_[kMaxEvents];
   uint32_t start_ticks_[kMaxEvents];
