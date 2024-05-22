@@ -15,6 +15,10 @@ limitations under the License.
 #ifndef THIRD_PARTY_TFLITE_MICRO_TENSORFLOW_LITE_MICRO_MICRO_COMMON_H_
 #define THIRD_PARTY_TFLITE_MICRO_TENSORFLOW_LITE_MICRO_MICRO_COMMON_H_
 
+#ifdef TFLITE_MODEL_COMPILER
+#include <fstream>
+#endif
+
 #include "tensorflow/lite/c/common.h"
 
 // TFLMRegistration defines the API that TFLM kernels need to implement.
@@ -28,6 +32,10 @@ struct TFLMRegistration {
   void (*reset)(TfLiteContext* context, void* buffer);
   int32_t builtin_code;
   const char* custom_name;
+#ifdef TFLITE_MODEL_COMPILER
+  TfLiteStatus (*compile)(TfLiteContext* context, TfLiteNode* node,
+                          TfLiteCompileStep step, std::ofstream& os);
+#endif
 };
 
 struct TFLMInferenceRegistration {

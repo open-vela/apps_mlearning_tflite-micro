@@ -415,6 +415,12 @@ typedef enum TfLiteRunStep {
   kTfLiteRunStepEval
 } TfLiteRunStep;
 
+typedef enum TfLiteCompileStep {
+  kTfLiteCompileStepUnknown,
+  kTfLiteCompileStepInclude,
+  kTfLiteCompileStepEval,
+} TfLiteCompileStep;
+
 /// The delegates should use zero or positive integers to represent handles.
 /// -1 is reserved from unallocated status.
 typedef int TfLiteBufferHandle;

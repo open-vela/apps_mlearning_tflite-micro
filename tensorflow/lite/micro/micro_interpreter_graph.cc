@@ -211,6 +211,55 @@ TfLiteStatus MicroInterpreterGraph::InvokeSubgraph(int subgraph_idx) {
   return kTfLiteOk;
 }
 
+#ifdef TFLITE_MODEL_COMPILER
+TfLiteStatus MicroInterpreterGraph::CompileSubgraph(int subgraph_idx,
+                                                    TfLiteCompileStep step,
+                                                    std::ofstream& ofs) {
+  int previous_subgraph_idx = current_subgraph_index_;
+  current_subgraph_index_ = subgraph_idx;
+
+  if (static_cast<size_t>(subgraph_idx) >= subgraphs_->size()) {
+    MicroPrintf("Accessing subgraph %d but only %d subgraphs found",
+                subgraph_idx, subgraphs_->size());
+    return kTfLiteError;
+  }
+  uint32_t operators_size = NumSubgraphOperators(model_, subgraph_idx);
+  for (size_t i = 0; i < operators_size; ++i) {
+    TfLiteNode* node =
+        &(subgraph_allocations_[subgraph_idx].node_and_registrations[i].node);
+    const TFLMRegistration* registration = subgraph_allocations_[subgraph_idx]
+                                               .node_and_registrations[i]
+                                               .registration;
+
+    // TFLITE_DCHECK(registration->compile);
+    if (registration->compile == nullptr) {
+      ofs << "#error compile " << OpNameFromRegistration(registration)
+          << " is not supported" << std::endl;
+      continue;
+    }
+
+    TfLiteStatus compile_status =
+        registration->compile(context_, node, step, ofs);
+
+    // All TfLiteTensor structs used in the kernel are allocated from temp
+    // memory in the allocator. This creates a chain of allocations in the
+    // temp section. The call below resets the chain of allocations to
+    // prepare for the next call.
+    allocator_->ResetTempAllocations();
+
+    if (compile_status == kTfLiteError) {
+      MicroPrintf("Node %s (number %d) failed to compile with status %d",
+                  OpNameFromRegistration(registration), i, compile_status);
+      return kTfLiteError;
+    } else if (compile_status != kTfLiteOk) {
+      return compile_status;
+    }
+  }
+  current_subgraph_index_ = previous_subgraph_idx;
+  return kTfLiteOk;
+}
+#endif
+
 TfLiteStatus MicroInterpreterGraph::ResetVariableTensors() {
   for (size_t subgraph_idx = 0; subgraph_idx < subgraphs_->size();
        subgraph_idx++) {

@@ -59,6 +59,13 @@ class MicroInterpreterGraph : public MicroGraph {
   // in the model.
   virtual TfLiteStatus InvokeSubgraph(int subgraph_idx);
 
+#ifdef TFLITE_MODEL_COMPILER
+  // Calls TFLMRegistration->Compile for every operator in a single subgraph
+  // in the model.
+  virtual TfLiteStatus CompileSubgraph(int subgraph_idx, TfLiteCompileStep step,
+                                       std::ofstream& ofs);
+#endif
+
   // Zeros out all variable tensors in all subgraphs in the model.
   virtual TfLiteStatus ResetVariableTensors();
 

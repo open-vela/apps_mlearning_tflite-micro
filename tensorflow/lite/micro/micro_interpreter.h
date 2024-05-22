@@ -74,6 +74,12 @@ class MicroInterpreter {
   // TODO(b/149795762): Add this to the TfLiteStatus enum.
   TfLiteStatus Invoke();
 
+#ifdef TFLITE_MODEL_COMPILER
+  // In order to compile partial graph into cxx codes, this can return
+  // values other than kTfLiteOk and kTfLiteError.
+  TfLiteStatus Compile(std::ofstream& ofs, const char* prefix);
+#endif
+
   // This is the recommended API for an application to pass an external payload
   // pointer as an external context to kernels. The life time of the payload
   // pointer should be at least as long as this interpreter. TFLM supports only

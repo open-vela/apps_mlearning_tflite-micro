@@ -22,6 +22,7 @@ limitations under the License.
 #include "tensorflow/lite/c/c_api_types.h"
 #include "tensorflow/lite/c/common.h"
 #include "tensorflow/lite/micro/flatbuffer_utils.h"
+#include "tensorflow/lite/micro/kernels/kernel_util.h"
 #include "tensorflow/lite/micro/memory_helpers.h"
 #include "tensorflow/lite/micro/micro_allocator.h"
 #include "tensorflow/lite/micro/micro_interpreter_context.h"
@@ -293,6 +294,60 @@ TfLiteStatus MicroInterpreter::Invoke() {
   }
   return graph_.InvokeSubgraph(0);
 }
+
+#ifdef TFLITE_MODEL_COMPILER
+TfLiteStatus MicroInterpreter::Compile(std::ofstream& ofs, const char* prefix) {
+  if (initialization_status_ != kTfLiteOk) {
+    MicroPrintf("Invoke() called after initialization failed\n");
+    return kTfLiteError;
+  }
+
+  // Ensure tensors are allocated before the interpreter is invoked to avoid
+  // difficult to debug segfaults.
+  if (!tensors_allocated_) {
+    TF_LITE_ENSURE_OK(&context_, AllocateTensors());
+  }
+
+  // Compile definitions.
+  ofs << "#include <cstdint>" << std::endl;
+  graph_.CompileSubgraph(0, kTfLiteCompileStepInclude, ofs);
+  allocator_.CompileModelAllocation(ofs);
+
+  // Compile inputs.
+  ofs << std::endl
+      << "extern \"C\" void* " << prefix << "GetInput(int idx) {" << std::endl
+      << "static void* inputs[] = {";
+  const size_t inputs_length = inputs_size();
+  for (int i = 0; i < inputs_length; i++) {
+    tflite::micro::CompileAddress(ofs, input_tensors_[i]->data.data);
+    ofs << ",";
+  }
+  ofs << "};" << std::endl
+      << "return inputs[idx];" << std::endl
+      << "}" << std::endl;
+
+  // Compile outputs.
+  ofs << std::endl
+      << "extern \"C\" void* " << prefix << "GetOutput(int idx) {" << std::endl
+      << "static void* outputs[] = {";
+  const size_t outputs_length = outputs_size();
+  for (int i = 0; i < outputs_length; i++) {
+    tflite::micro::CompileAddress(ofs, output_tensors_[i]->data.data);
+    ofs << ",";
+  }
+  ofs << "};" << std::endl
+      << "return outputs[idx];" << std::endl
+      << "}" << std::endl;
+
+  // Compile invoke.
+  ofs << std::endl
+      << "extern \"C\" void " << prefix << "Invoke(void) {" << std::endl;
+  graph_.CompileSubgraph(0, kTfLiteCompileStepEval, ofs);
+  ofs << "}" << std::endl;
+
+  return kTfLiteOk;
+}
+#endif
 
 TfLiteTensor* MicroInterpreter::input(size_t index) {
   const size_t length = inputs_size();
