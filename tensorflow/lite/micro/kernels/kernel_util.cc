@@ -50,7 +50,11 @@ TFLMRegistration RegisterOp(
           /*invoke=*/invoke,
           /*reset*/ reset,
           /*builtin_code=*/0,
-          /*custom_name=*/nullptr};
+          /*custom_name=*/nullptr,
+#ifdef TFLITE_MODEL_COMPILER
+          /*compile=*/nullptr,
+#endif
+  };
 }
 
 TFLMInferenceRegistration RegisterOp(
@@ -61,6 +65,27 @@ TFLMInferenceRegistration RegisterOp(
       /*reset*/ reset,
   };
 }
+
+#ifdef TFLITE_MODEL_COMPILER
+TFLMRegistration CompileOp(
+    void* (*init)(TfLiteContext* context, const char* buffer, size_t length),
+    TfLiteStatus (*prepare)(TfLiteContext* context, TfLiteNode* node),
+    TfLiteStatus (*invoke)(TfLiteContext* context, TfLiteNode* node),
+    TfLiteStatus (*compile)(TfLiteContext* context, TfLiteNode* node,
+                            TfLiteCompileStep step, std::ofstream& os),
+    void (*free)(TfLiteContext* context, void* buffer),
+    void (*reset)(TfLiteContext* context, void* buffer)) {
+  return {/*init=*/init,
+          /*free=*/free,
+          /*prepare=*/prepare,
+          /*invoke=*/invoke,
+          /*reset*/ reset,
+          /*builtin_code=*/0,
+          /*custom_name=*/nullptr,
+          /*compile=*/compile,
+  };
+}
+#endif
 
 // Returns a mutable tensor for a given input index. is_variable must be checked
 // during prepare when the full TfLiteTensor is available.
@@ -283,6 +308,22 @@ TfLiteEvalTensor MakeUnpackedInt4Tensor(TfLiteContext* context,
       tflite::micro::GetTensorData<int8_t>(&new_tensor));
   return new_tensor;
 }
+
+#ifdef TFLITE_MODEL_COMPILER
+void CompileAddress(std::ofstream& ofs, const void* addr) {
+  if (addr == nullptr) {
+    ofs << "nullptr";
+  } else {
+    ofs << addr << "-Base+Arena";
+  }
+}
+
+void CompileAddress(std::ofstream& ofs, const char* name, const void* addr) {
+  ofs << "static constexpr auto* " << name << " = ";
+  CompileAddress(ofs, addr);
+  ofs << ";" << std::endl;
+}
+#endif
 
 }  // namespace micro
 }  // namespace tflite

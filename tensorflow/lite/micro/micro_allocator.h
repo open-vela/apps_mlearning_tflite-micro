@@ -135,6 +135,15 @@ class MicroAllocator {
   static MicroAllocator* Create(uint8_t* tensor_arena, size_t arena_size,
                                 MicroMemoryPlanner* memory_planner);
 
+#ifdef TFLITE_MODEL_COMPILER
+  // Creates a MicroAllocator instance using the provided
+  // SingleArenaBufferAllocator instance and the MemoryPlanner. This allocator
+  // also holds the arena address for later compiling.
+  static MicroAllocator* Create(SingleArenaBufferAllocator* memory_allocator,
+                                MicroMemoryPlanner* memory_planner,
+                                uint8_t* aligned_arena);
+#endif
+
   // Creates a MicroAllocator instance using the provided
   // SingleArenaBufferAllocator instance and the MemoryPlanner. This allocator
   // instance will use the SingleArenaBufferAllocator instance to manage
@@ -186,6 +195,10 @@ class MicroAllocator {
   TfLiteStatus FinishModelAllocation(
       const Model* model, SubgraphAllocations* subgraph_allocations,
       ScratchBufferHandle** scratch_buffer_handles);
+
+#ifdef TFLITE_MODEL_COMPILER
+  TfLiteStatus CompileModelAllocation(std::ofstream& ofs);
+#endif
 
   // Allocates a TfLiteTensor struct and populates the returned value with
   // properties from the model flatbuffer. This struct is allocated from
@@ -256,6 +269,11 @@ class MicroAllocator {
   MicroAllocator(IPersistentBufferAllocator* persistent_buffer_allocator,
                  INonPersistentBufferAllocator* non_persistent_buffer_allocator,
                  MicroMemoryPlanner* memory_planner);
+#ifdef TFLITE_MODEL_COMPILER
+  MicroAllocator(IPersistentBufferAllocator* persistent_buffer_allocator,
+                 INonPersistentBufferAllocator* non_persistent_buffer_allocator,
+                 MicroMemoryPlanner* memory_planner, uint8_t* aligned_arena);
+#endif
   virtual ~MicroAllocator();
 
   // Allocates an array in the arena to hold pointers to the node and
@@ -340,6 +358,9 @@ class MicroAllocator {
   // to ensure that multi-tenant allocations can share the head for buffers.
   size_t max_head_buffer_usage_ = 0;
 
+#ifdef TFLITE_MODEL_COMPILER
+  uint8_t* aligned_arena_ = nullptr;
+#endif
   TF_LITE_REMOVE_VIRTUAL_DELETE
 };
 
