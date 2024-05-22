@@ -384,6 +384,18 @@ MicroAllocator::MicroAllocator(
       memory_planner_(memory_planner),
       model_is_allocating_(false) {}
 
+#ifdef TFLITE_MODEL_COMPILER
+MicroAllocator::MicroAllocator(
+    IPersistentBufferAllocator* persistent_buffer_allocator,
+    INonPersistentBufferAllocator* non_persistent_buffer_allocator,
+    MicroMemoryPlanner* memory_planner, uint8_t* aligned_arena)
+    : non_persistent_buffer_allocator_(non_persistent_buffer_allocator),
+      persistent_buffer_allocator_(persistent_buffer_allocator),
+      memory_planner_(memory_planner),
+      model_is_allocating_(false),
+      aligned_arena_(aligned_arena) {}
+#endif
+
 MicroAllocator::~MicroAllocator() {}
 
 MicroAllocator* MicroAllocator::Create(uint8_t* tensor_arena, size_t arena_size,
@@ -394,7 +406,11 @@ MicroAllocator* MicroAllocator::Create(uint8_t* tensor_arena, size_t arena_size,
   SingleArenaBufferAllocator* memory_allocator =
       SingleArenaBufferAllocator::Create(aligned_arena, aligned_arena_size);
 
+#ifdef TFLITE_MODEL_COMPILER
+  return Create(memory_allocator, memory_planner, aligned_arena);
+#else
   return Create(memory_allocator, memory_planner);
+#endif
 }
 
 MicroAllocator* MicroAllocator::Create(uint8_t* tensor_arena, size_t arena_size,
@@ -410,8 +426,27 @@ MicroAllocator* MicroAllocator::Create(uint8_t* tensor_arena, size_t arena_size,
   MicroMemoryPlanner* memory_planner =
       CreateMemoryPlanner(memory_planner_type, memory_allocator);
 
+#ifdef TFLITE_MODEL_COMPILER
+  return Create(memory_allocator, memory_planner, aligned_arena);
+#else
   return Create(memory_allocator, memory_planner);
+#endif
 }
+
+#ifdef TFLITE_MODEL_COMPILER
+MicroAllocator* MicroAllocator::Create(
+    SingleArenaBufferAllocator* memory_allocator,
+    MicroMemoryPlanner* memory_planner, uint8_t* aligned_arena) {
+  TFLITE_DCHECK(memory_allocator != nullptr);
+  TFLITE_DCHECK(memory_planner != nullptr);
+
+  uint8_t* allocator_buffer = memory_allocator->AllocatePersistentBuffer(
+      sizeof(MicroAllocator), alignof(MicroAllocator));
+  MicroAllocator* allocator = new (allocator_buffer) MicroAllocator(
+      memory_allocator, memory_allocator, memory_planner, aligned_arena);
+  return allocator;
+}
+#endif
 
 MicroAllocator* MicroAllocator::Create(
     SingleArenaBufferAllocator* memory_allocator,
@@ -529,6 +564,18 @@ TfLiteStatus MicroAllocator::FinishModelAllocation(
   model_is_allocating_ = false;
   return kTfLiteOk;
 }
+
+#ifdef TFLITE_MODEL_COMPILER
+TfLiteStatus MicroAllocator::CompileModelAllocation(std::ofstream& ofs) {
+  ofs << std::endl
+      << "static int8_t Arena[" << max_head_buffer_usage_
+      << "] __attribute__((aligned(16)));" << std::endl;
+  ofs << "static constexpr uintptr_t Base = "
+      << reinterpret_cast<void*>(aligned_arena_) << ";" << std::endl;
+
+  return kTfLiteOk;
+}
+#endif
 
 void* MicroAllocator::AllocatePersistentBuffer(size_t bytes) {
   return persistent_buffer_allocator_->AllocatePersistentBuffer(

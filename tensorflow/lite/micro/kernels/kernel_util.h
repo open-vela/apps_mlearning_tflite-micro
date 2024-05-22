@@ -39,6 +39,17 @@ TFLMInferenceRegistration RegisterOp(
     TfLiteStatus (*invoke)(TfLiteContext* context, TfLiteNode* node),
     void (*reset)(TfLiteContext* context, void* buffer) = nullptr);
 
+#ifdef TFLITE_MODEL_COMPILER
+TFLMRegistration CompileOp(
+    void* (*init)(TfLiteContext* context, const char* buffer, size_t length),
+    TfLiteStatus (*prepare)(TfLiteContext* context, TfLiteNode* node),
+    TfLiteStatus (*invoke)(TfLiteContext* context, TfLiteNode* node),
+    TfLiteStatus (*compile)(TfLiteContext* context, TfLiteNode* node,
+                            TfLiteCompileStep step, std::ofstream& os),
+    void (*free)(TfLiteContext* context, void* buffer) = nullptr,
+    void (*reset)(TfLiteContext* context, void* buffer) = nullptr);
+#endif
+
 // Prints out n bytes in a int8_t buffer as hex
 void PrintNBytes(const int8_t* tensor_data, int n_bytes,
                  const char* prefix = nullptr);
@@ -144,6 +155,22 @@ TfLiteStatus CopySubgraphOutputsToOpOutputs(TfLiteContext* context,
 TfLiteEvalTensor MakeUnpackedInt4Tensor(TfLiteContext* context,
                                         int scratch_buffer_index,
                                         const TfLiteEvalTensor* tensor);
+
+#ifdef TFLITE_MODEL_COMPILER
+void CompileAddress(std::ofstream& ofs, const void* addr);
+void CompileAddress(std::ofstream& ofs, const char* name, const void* addr);
+
+template <typename T>
+void CompileArray(std::ofstream& ofs, const char* type, const char* name,
+                  const T* addr, int nb) {
+  ofs << "static " << type << " " << name << "[] = {";
+  for (int i = 0; i < nb; i++) {
+    ofs << std::to_string(addr[i]) << ",";
+  }
+  ofs << "};" << std::endl;
+}
+#endif
+
 }  // namespace micro
 }  // namespace tflite
 
