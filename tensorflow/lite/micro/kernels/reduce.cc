@@ -64,12 +64,25 @@ TfLiteStatus EvalSum(TfLiteContext* context, TfLiteNode* node) {
                        static_cast<OpDataReduce*>(node->user_data));
 }
 
+#ifdef TFLITE_MODEL_COMPILER
+TfLiteStatus CompileMeanInt8(TfLiteContext* context, TfLiteNode* node,
+                             TfLiteCompileStep step, std::ofstream& ofs) {
+  return CompileMeanHelperInt8(
+      context, node, static_cast<OpDataReduce*>(node->user_data), step, ofs);
+}
+#endif
+
 TFLMRegistration Register_MEAN() {
   return tflite::micro::RegisterOp(InitReduce, PrepareMeanOrSum, EvalMean);
 }
 
 TFLMRegistration Register_MEAN_INT8() {
+#ifdef TFLITE_MODEL_COMPILER
+  return tflite::micro::CompileOp(InitReduce, PrepareMeanOrSum, EvalMeanInt8,
+                                  CompileMeanInt8);
+#else
   return tflite::micro::RegisterOp(InitReduce, PrepareMeanOrSum, EvalMeanInt8);
+#endif
 }
 
 TFLMRegistration Register_REDUCE_MAX() {

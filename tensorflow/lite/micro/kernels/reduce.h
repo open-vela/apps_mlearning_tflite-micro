@@ -55,6 +55,12 @@ TfLiteStatus EvalMeanHelperInt8(TfLiteContext* context, TfLiteNode* node,
 TfLiteStatus EvalSumHelper(TfLiteContext* context, TfLiteNode* node,
                            OpDataReduce* op_data);
 
+#ifdef TFLITE_MODEL_COMPILER
+TfLiteStatus CompileMeanHelperInt8(TfLiteContext* context, TfLiteNode* node,
+                                   OpDataReduce* op_data,
+                                   TfLiteCompileStep step, std::ofstream& ofs);
+#endif
+
 void ReduceResolveAxis(const int* axis_data, int axis_count,
                        MeanParams* op_params);
 
