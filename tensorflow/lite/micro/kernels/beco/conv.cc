@@ -223,14 +223,165 @@ TfLiteStatus Eval(TfLiteContext* context, TfLiteNode* node) {
   return kTfLiteOk;
 }
 
+#ifdef TFLITE_MODEL_COMPILER
+TfLiteStatus Compile(TfLiteContext* context, TfLiteNode* node,
+                     TfLiteCompileStep step, std::ofstream& ofs) {
+  switch (step) {
+    case kTfLiteCompileStepInclude:
+      ofs << "#include \"beco_nnfunctions.h\"" << std::endl
+          << "#include \"tensorflow/lite/micro/kernels/conv.h\"" << std::endl
+          << "#include \"tensorflow/lite/micro/kernels/beco/utils.h\""
+          << std::endl;
+      break;
+
+    case kTfLiteCompileStepEval: {
+      TFLITE_DCHECK(node->builtin_data != nullptr);
+      const auto& params =
+          *(reinterpret_cast<TfLiteConvParams*>(node->builtin_data));
+      TFLITE_DCHECK(node->user_data != nullptr);
+      const OpData* data = static_cast<const OpData*>(node->user_data);
+      MicroContext* micro_context = GetMicroContext(context);
+
+      const TfLiteEvalTensor* input =
+          tflite::micro::GetEvalInput(context, node, kConvInputTensor);
+      const TfLiteEvalTensor* filter =
+          tflite::micro::GetEvalInput(context, node, kConvWeightsTensor);
+      const TfLiteEvalTensor* bias =
+          tflite::micro::GetEvalInput(context, node, kConvBiasTensor);
+      TfLiteEvalTensor* output =
+          tflite::micro::GetEvalOutput(context, node, kConvOutputTensor);
+
+      ofs << "{ // beco conv int8" << std::endl;
+
+      // Tensor data.
+      tflite::micro::CompileArray(ofs, "const int8_t", "filter_data",
+                                  tflite::micro::GetTensorData<int8_t>(filter),
+                                  ElementCount(*filter->dims));
+      tflite::micro::CompileArray(ofs, "const int32_t", "bias_data",
+                                  tflite::micro::GetTensorData<int32_t>(bias),
+                                  ElementCount(*bias->dims));
+      tflite::micro::CompileAddress(ofs, "input_data", input->data.data);
+      tflite::micro::CompileAddress(ofs, "output_data", output->data.data);
+
+      // Conv parameters.
+      ofs << "static const cmsis_nn_conv_params conv_params = {.input_offset="
+          << -data->reference_op_data.input_zero_point
+          << ", .output_offset=" << data->reference_op_data.output_zero_point
+          << ", .stride={.w=" << params.stride_width
+          << ", .h=" << params.stride_height
+          << "}, .padding={.w=" << data->reference_op_data.padding.width
+          << ", .h=" << data->reference_op_data.padding.height
+          << "}, .dilation={.w=" << params.dilation_width_factor
+          << ", .h=" << params.dilation_height_factor << "}, .activation={.min="
+          << data->reference_op_data.output_activation_min
+          << ", .max=" << data->reference_op_data.output_activation_max << "}};"
+          << std::endl;
+
+      // Quant parameters.
+      const int num_channels = output->dims->data[3] + data->padding;
+      tflite::micro::CompileArray(
+          ofs, "int32_t", "multiplier",
+          data->reference_op_data.per_channel_output_multiplier, num_channels);
+      tflite::micro::CompileArray(
+          ofs, "int32_t", "shift",
+          data->reference_op_data.per_channel_output_shift, num_channels);
+
+      ofs << "static const cmsis_nn_per_channel_quant_params quant_params = "
+             "{.multiplier=multiplier, .shift=shift};"
+          << std::endl;
+
+      // Tensor demensions.
+      ofs << "static const cmsis_nn_dims input_dims = {.n="
+          << input->dims->data[0] << ", .h=" << input->dims->data[1]
+          << ", .w=" << input->dims->data[2] << ", .c=" << input->dims->data[3]
+          << "};" << std::endl;
+
+      ofs << "static const cmsis_nn_dims filter_dims = {.n="
+          << filter->dims->data[0] + data->padding
+          << ", .h=" << filter->dims->data[1]
+          << ", .w=" << filter->dims->data[2]
+          << ", .c=" << filter->dims->data[3] << "};" << std::endl;
+
+      ofs << "static const cmsis_nn_dims bias_dims = {.n=1, .h=1, .w=1, .c="
+          << bias->dims->data[0] + data->padding << "};" << std::endl;
+
+      ofs << "static const cmsis_nn_dims output_dims = {.n="
+          << output->dims->data[0] << ", .h=" << output->dims->data[1]
+          << ", .w=" << output->dims->data[2]
+          << ", .c=" << output->dims->data[3] + data->padding << "};"
+          << std::endl;
+
+      // Computations.
+      tflite::micro::CompileAddress(
+          ofs, "io_buffer",
+          micro_context->GetScratchBuffer(data->io_buffer_idx));
+      tflite::micro::CompileAddress(
+          ofs, "filter_buffer",
+          micro_context->GetScratchBuffer(data->filter_buffer_idx));
+      tflite::micro::CompileAddress(
+          ofs, "bias_buffer",
+          micro_context->GetScratchBuffer(data->bias_buffer_idx));
+
+      ofs << "tflite::beco::hwc2chw<int8_t>(reinterpret_cast<int8_t*>("
+             "io_buffer), reinterpret_cast<int8_t*>(input_data), "
+          << input->dims->data[1] << ", " << input->dims->data[2] << ", "
+          << input->dims->data[3] << ");" << std::endl;
+      ofs << "std::memcpy(input_data, io_buffer, " << ElementCount(*input->dims)
+          << ");" << std::endl;
+      ofs << "tflite::beco::ohwi2ihwo<int8_t>(reinterpret_cast<int8_t*>("
+             "filter_buffer), filter_data, "
+          << data->padding << ", " << filter->dims->data[0] << ", "
+          << filter->dims->data[1] << ", " << filter->dims->data[2] << ", "
+          << filter->dims->data[3] << ");" << std::endl;
+      int32_t input_offset = -data->reference_op_data.input_zero_point;
+      if (input_offset != 0) {
+        ofs << "tflite::beco::addOffset2Bias<int32_t,int8_t>(reinterpret_cast<"
+               "int32_t*>(bias_buffer), bias_data, "
+            << input_offset << ", reinterpret_cast<int8_t*>(filter_buffer), "
+            << data->padding << ", " << filter->dims->data[0] << ", "
+            << filter->dims->data[1] << ", " << filter->dims->data[2] << ", "
+            << filter->dims->data[3] << ");" << std::endl;
+      } else {
+        ofs << "std::memcpy(bias_buffer, bias_data, "
+            << bias->dims->data[0] * sizeof(int32_t) << ");" << std::endl;
+      }
+
+      ofs << "BECO_INIT();" << std::endl
+          << "beco_convolve_s8(nullptr, &conv_params, &quant_params, "
+             "&input_dims, reinterpret_cast<int8_t*>(input_data), "
+             "&filter_dims, reinterpret_cast<int8_t*>(filter_buffer), "
+             "&bias_dims, reinterpret_cast<int32_t*>(bias_buffer), "
+             "&output_dims, reinterpret_cast<int8_t*>(io_buffer));"
+          << std::endl
+          << "BECO_EXIT(0);" << std::endl;
+
+      ofs << "tflite::beco::chw2hwc<int8_t>(reinterpret_cast<int8_t*>(output_"
+             "data), reinterpret_cast<int8_t*>(io_buffer), "
+          << output->dims->data[1] << ", " << output->dims->data[2] << ", "
+          << output->dims->data[3] << ");" << std::endl;
+
+      ofs << "}" << std::endl;
+
+    } break;
+
+    default:
+      return kTfLiteError;
+  }
+
+  return kTfLiteOk;
+}
+#endif
+
 }  // namespace
 
-TFLMRegistration Register_CONV_2D() {
-  return tflite::micro::RegisterOp(Init, Prepare, Eval);
-}
+TFLMRegistration Register_CONV_2D() { return Register_CONV_2D_INT8(); }
 
 TFLMRegistration Register_CONV_2D_INT8() {
+#ifdef TFLITE_MODEL_COMPILER
+  return tflite::micro::CompileOp(Init, Prepare, Eval, Compile);
+#else
   return tflite::micro::RegisterOp(Init, Prepare, Eval);
+#endif
 }
 
 }  // namespace tflite
