@@ -246,9 +246,9 @@ TfLiteStatus EvalMeanHelperInt8(TfLiteContext* context, TfLiteNode* node,
   int resolved_axis[kMaxNumberOfReducedAxis];
 
   TFLITE_DCHECK(input->type == kTfLiteInt8);
-  TF_LITE_ENSURE_OK(
-      context, EvalIntegerMean<int8_t>(context, node, num_axis, op_data,
-                                        temp_index, resolved_axis));
+  TF_LITE_ENSURE_OK(context,
+                    EvalIntegerMean<int8_t>(context, node, num_axis, op_data,
+                                            temp_index, resolved_axis));
   return kTfLiteOk;
 }
 
@@ -329,7 +329,8 @@ TfLiteStatus EvalSumHelper(TfLiteContext* context, TfLiteNode* node,
               input->dims->size, tflite::micro::GetTensorData<float>(output),
               output->dims->data, output->dims->size,
               tflite::micro::GetTensorData<int>(axis), num_axis,
-              params->keep_dims, temp_index, resolved_axis, /*init_value=*/0.f,
+              params->keep_dims, temp_index, resolved_axis,
+              /*init_value=*/0.f,
               [](const float current, const float in) -> float {
                 return in + current;
               }));
@@ -352,5 +353,91 @@ TfLiteStatus EvalSumHelper(TfLiteContext* context, TfLiteNode* node,
   }
   return kTfLiteOk;
 }
+
+#ifdef TFLITE_MODEL_COMPILER
+TfLiteStatus CompileQuantizedMeanOrSum(TfLiteContext* context, TfLiteNode* node,
+                                       OpDataReduce* op_data, const char* type,
+                                       std::ofstream& ofs) {
+  const TfLiteEvalTensor* input = tflite::micro::GetEvalInput(context, node, 0);
+  const TfLiteEvalTensor* axis = tflite::micro::GetEvalInput(context, node, 1);
+  TfLiteEvalTensor* output = tflite::micro::GetEvalOutput(context, node, 0);
+  auto* params = static_cast<TfLiteReducerParams*>(node->builtin_data);
+
+  tflite::micro::CompileAddress(ofs, "input_data", input->data.data);
+  tflite::micro::CompileAddress(ofs, "output_data", output->data.data);
+  tflite::micro::CompileArray(ofs, "const int", "axis_data",
+                              tflite::micro::GetTensorData<int>(axis),
+                              ElementCount(*axis->dims));
+  tflite::micro::CompileArray(ofs, "const int", "input_dims", input->dims->data,
+                              input->dims->size);
+  tflite::micro::CompileArray(ofs, "const int", "output_dims",
+                              output->dims->data, output->dims->size);
+
+  ofs << "tflite::reference_ops::QuantizedMeanOrSumExtraArgs<" << type
+      << ", int32_t>(reinterpret_cast<int8_t*>(input_data), "
+      << op_data->input_zp << ", " << op_data->input_scale << ", input_dims, "
+      << input->dims->size << ", reinterpret_cast<int8_t*>(output_data), "
+      << op_data->output_scale << ", " << op_data->multiplier << ", "
+      << op_data->shift << ", " << op_data->output_zp << ", output_dims, "
+      << output->dims->size << ", axis_data, " << op_data->num_axis << ", "
+      << params->keep_dims
+      << ", temp_index, resolved_axis, reinterpret_cast<int32_t*>(temp_sum), "
+         "compute_sum);"
+      << std::endl;
+
+  return kTfLiteOk;
+}
+
+TfLiteStatus CompileIntegerMean(TfLiteContext* context, TfLiteNode* node,
+                                OpDataReduce* op_data, const char* type,
+                                std::ofstream& ofs) {
+  tflite::micro::CompileAddress(
+      ofs, "temp_sum",
+      context->GetScratchBuffer(context, op_data->temp_buffer_idx));
+  ofs << "static constexpr bool compute_sum = false;" << std::endl;
+
+  CompileQuantizedMeanOrSum(context, node, op_data, type, ofs);
+
+  return kTfLiteOk;
+}
+
+TfLiteStatus CompileMeanHelperInt8(TfLiteContext* context, TfLiteNode* node,
+                                   OpDataReduce* op_data,
+                                   TfLiteCompileStep step, std::ofstream& ofs) {
+  switch (step) {
+    case kTfLiteCompileStepInclude:
+      ofs << "#include \"tensorflow/lite/micro/kernels/reduce.h\"" << std::endl
+          << "#include \"tensorflow/lite/kernels/internal/reference/reduce.h\""
+          << std::endl;
+      break;
+
+    case kTfLiteCompileStepEval: {
+      const TfLiteEvalTensor* input =
+          tflite::micro::GetEvalInput(context, node, 0);
+      const TfLiteEvalTensor* axis =
+          tflite::micro::GetEvalInput(context, node, 1);
+      TFLITE_DCHECK(input->type == kTfLiteInt8);
+
+      ofs << "{ // mean int8" << std::endl;
+
+      ofs << "static constexpr int num_axis = " << ElementCount(*axis->dims)
+          << ";" << std::endl;
+      ofs << "int temp_index[" << kMaxNumberOfAxis << "];" << std::endl;
+      ofs << "int resolved_axis[" << kMaxNumberOfReducedAxis << "];"
+          << std::endl;
+
+      TF_LITE_ENSURE_OK(
+          context, CompileIntegerMean(context, node, op_data, "int8_t", ofs));
+
+      ofs << "}" << std::endl;
+    } break;
+
+    default:
+      return kTfLiteError;
+  }
+
+  return kTfLiteOk;
+}
+#endif  // TFLITE_MODEL_COMPILER
 
 }  // namespace tflite
