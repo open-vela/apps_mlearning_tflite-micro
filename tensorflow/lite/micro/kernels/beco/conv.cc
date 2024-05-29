@@ -13,19 +13,18 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
-#include "arm_nn_types.h"
-#include "beco_nnfunctions.h"
+#include "tensorflow/lite/micro/kernels/conv.h"
 
+#include "beco_nnfunctions.h"
 #include "tensorflow/lite/c/builtin_op_data.h"
 #include "tensorflow/lite/c/common.h"
-#include "tensorflow/lite/micro/kernels/beco/utils.h"
-#include "tensorflow/lite/micro/kernels/conv.h"
 #include "tensorflow/lite/kernels/internal/common.h"
 #include "tensorflow/lite/kernels/internal/reference/conv.h"
 #include "tensorflow/lite/kernels/internal/reference/integer_ops/conv.h"
 #include "tensorflow/lite/kernels/internal/tensor_ctypes.h"
 #include "tensorflow/lite/kernels/kernel_util.h"
 #include "tensorflow/lite/kernels/padding.h"
+#include "tensorflow/lite/micro/kernels/beco/utils.h"
 #include "tensorflow/lite/micro/kernels/kernel_util.h"
 #include "tensorflow/lite/micro/micro_log.h"
 
@@ -80,19 +79,19 @@ TfLiteStatus Prepare(TfLiteContext* context, TfLiteNode* node) {
   // Request temp convert buffers.
   data->padding = (8 - (output->dims->data[3] & 7)) & 7;
   TF_LITE_ENSURE_STATUS(micro_context->RequestScratchBufferInArena(
-      input->dims->data[0] * input->dims->data[1] *
-      input->dims->data[2] * input->dims->data[3],
+      input->dims->data[0] * input->dims->data[1] * input->dims->data[2] *
+          input->dims->data[3],
       &data->buffer_idx_input));
   TF_LITE_ENSURE_STATUS(micro_context->RequestScratchBufferInArena(
       (filter->dims->data[0] + data->padding) * filter->dims->data[1] *
-       filter->dims->data[2] * filter->dims->data[3],
+          filter->dims->data[2] * filter->dims->data[3],
       &data->buffer_idx_filter));
   TF_LITE_ENSURE_STATUS(micro_context->RequestScratchBufferInArena(
       (bias->dims->data[0] + data->padding) * sizeof(int32_t),
       &data->buffer_idx_bias));
   TF_LITE_ENSURE_STATUS(micro_context->RequestScratchBufferInArena(
-      output->dims->data[0] * output->dims->data[1] *
-      output->dims->data[2] * (output->dims->data[3] + data->padding),
+      output->dims->data[0] * output->dims->data[1] * output->dims->data[2] *
+          (output->dims->data[3] + data->padding),
       &data->buffer_idx_output));
 
   // Prepare quant buffers.
@@ -105,11 +104,10 @@ TfLiteStatus Prepare(TfLiteContext* context, TfLiteNode* node) {
           context, num_channels * sizeof(int32_t)));
 
   // Initialize conv reference parameters.
-  TF_LITE_ENSURE_STATUS(CalculateOpDataConv(context, node, params,
-      input->dims->data[2], input->dims->data[1],
-      filter->dims->data[2], filter->dims->data[1],
-      output->dims->data[2], output->dims->data[1],
-      input->type, &data->reference_op_data));
+  TF_LITE_ENSURE_STATUS(CalculateOpDataConv(
+      context, node, params, input->dims->data[2], input->dims->data[1],
+      filter->dims->data[2], filter->dims->data[1], output->dims->data[2],
+      output->dims->data[1], input->type, &data->reference_op_data));
 
   micro_context->DeallocateTempTfLiteTensor(output);
   micro_context->DeallocateTempTfLiteTensor(input);
@@ -154,8 +152,8 @@ TfLiteStatus Eval(TfLiteContext* context, TfLiteNode* node) {
   cmsis_nn_per_channel_quant_params quant_params;
   quant_params.multiplier = const_cast<int32_t*>(
       data->reference_op_data.per_channel_output_multiplier);
-  quant_params.shift = const_cast<int32_t*>(
-      data->reference_op_data.per_channel_output_shift);
+  quant_params.shift =
+      const_cast<int32_t*>(data->reference_op_data.per_channel_output_shift);
 
   // Fetch buffers.
   auto input_buffer = reinterpret_cast<int8_t*>(
@@ -173,8 +171,8 @@ TfLiteStatus Eval(TfLiteContext* context, TfLiteNode* node) {
   input_dims.w = input->dims->data[2];
   input_dims.c = input->dims->data[3];
   beco::hwc2chw<int8_t>(
-    input_buffer, tflite::micro::GetTensorData<int8_t>(input),
-    input->dims->data[1], input->dims->data[2], input->dims->data[3]);
+      input_buffer, tflite::micro::GetTensorData<int8_t>(input),
+      input->dims->data[1], input->dims->data[2], input->dims->data[3]);
 
   cmsis_nn_dims filter_dims;
   filter_dims.n = filter->dims->data[0] + data->padding;
@@ -182,9 +180,9 @@ TfLiteStatus Eval(TfLiteContext* context, TfLiteNode* node) {
   filter_dims.w = filter->dims->data[2];
   filter_dims.c = filter->dims->data[3];
   beco::ohwi2ihwo<int8_t>(
-    filter_buffer, tflite::micro::GetTensorData<int8_t>(filter),
-    data->padding, filter->dims->data[0], filter->dims->data[1],
-    filter->dims->data[2], filter->dims->data[3]);
+      filter_buffer, tflite::micro::GetTensorData<int8_t>(filter),
+      data->padding, filter->dims->data[0], filter->dims->data[1],
+      filter->dims->data[2], filter->dims->data[3]);
 
   // XXX: should consider empty bias.
   cmsis_nn_dims bias_dims;
@@ -193,14 +191,15 @@ TfLiteStatus Eval(TfLiteContext* context, TfLiteNode* node) {
   bias_dims.w = 1;
   bias_dims.c = bias->dims->data[0] + data->padding;
   if (conv_params.input_offset != 0) {
-    beco::addOffset2Bias<int32_t,int8_t>(
-      bias_buffer, tflite::micro::GetOptionalTensorData<int32_t>(bias),
-      conv_params.input_offset, filter_buffer, data->padding,
-      filter->dims->data[0], filter->dims->data[1],
-      filter->dims->data[2], filter->dims->data[3]);
+    beco::addOffset2Bias<int32_t, int8_t>(
+        bias_buffer, tflite::micro::GetOptionalTensorData<int32_t>(bias),
+        conv_params.input_offset, filter_buffer, data->padding,
+        filter->dims->data[0], filter->dims->data[1], filter->dims->data[2],
+        filter->dims->data[3]);
   } else {
-    std::memcpy(bias_buffer, tflite::micro::GetOptionalTensorData<int32_t>(bias),
-      bias->dims->data[0] * sizeof(int32_t));
+    std::memcpy(bias_buffer,
+                tflite::micro::GetOptionalTensorData<int32_t>(bias),
+                bias->dims->data[0] * sizeof(int32_t));
   }
 
   cmsis_nn_dims output_dims;
@@ -211,16 +210,14 @@ TfLiteStatus Eval(TfLiteContext* context, TfLiteNode* node) {
 
   // Do the real job.
   BECO_INIT();
-  beco_convolve_s8(NULL, &conv_params, &quant_params,
-    &input_dims,  input_buffer,
-    &filter_dims, filter_buffer,
-    &bias_dims,   bias_buffer,
-    &output_dims, output_buffer);
+  beco_convolve_s8(NULL, &conv_params, &quant_params, &input_dims, input_buffer,
+                   &filter_dims, filter_buffer, &bias_dims, bias_buffer,
+                   &output_dims, output_buffer);
   BECO_EXIT(0);
 
-  beco::chw2hwc<int8_t>(
-    tflite::micro::GetTensorData<int8_t>(output), output_buffer,
-    output->dims->data[1], output->dims->data[2], output->dims->data[3]);
+  beco::chw2hwc<int8_t>(tflite::micro::GetTensorData<int8_t>(output),
+                        output_buffer, output->dims->data[1],
+                        output->dims->data[2], output->dims->data[3]);
 
   return kTfLiteOk;
 }
