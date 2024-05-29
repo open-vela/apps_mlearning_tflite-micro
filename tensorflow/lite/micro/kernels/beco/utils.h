@@ -20,8 +20,8 @@ limitations under the License.
 namespace tflite {
 namespace beco {
 
-template <typename Dtype>
-void chw2hwc(Dtype* dst, const Dtype* src, int H, int W, int C) {
+template <typename DType>
+void chw2hwc(DType* dst, const DType* src, int H, int W, int C) {
   const int HW = H * W;
   int idx_hwc = 0;
 
@@ -36,8 +36,8 @@ void chw2hwc(Dtype* dst, const Dtype* src, int H, int W, int C) {
   }
 }
 
-template <typename Dtype>
-void hwc2chw(Dtype* dst, const Dtype* src, int H, int W, int C) {
+template <typename DType>
+void hwc2chw(DType* dst, const DType* src, int H, int W, int C) {
   const int HW = H * W;
   int idx_hwc = 0;
 
@@ -52,9 +52,9 @@ void hwc2chw(Dtype* dst, const Dtype* src, int H, int W, int C) {
   }
 }
 
-template <typename Dtype>
-void ohwi2ihwo(Dtype* dst, const Dtype* src,
-               int p, int O, int H, int W, int I) {
+template <typename DType>
+void ohwi2ihwo(DType* dst, const DType* src, int p, int O, int H, int W,
+               int I) {
   const int Op = O + p;
   const int WOp = W * Op;
   const int HWOp = H * WOp;
@@ -73,14 +73,14 @@ void ohwi2ihwo(Dtype* dst, const Dtype* src,
   }
 }
 
-template <typename Dtype, typename WType>
-void addOffset2Bias(Dtype* dst, const Dtype* src, Dtype offset,
+template <typename DType, typename WType>
+void addOffset2Bias(DType* dst, const DType* src, DType offset,
                     const WType* weight, int p, int O, int H, int W, int I) {
   const int Op = O + p;
   const int IHW = I * H * W;
 
   for (int o = 0; o < O; ++o) {
-    Dtype sum = 0;
+    DType sum = 0;
     for (int idx = 0; idx < IHW; ++idx) {
       sum += weight[idx * Op + o] * offset;
     }
