@@ -317,6 +317,85 @@ TfLiteStatus MaxEvalInt16(TfLiteContext* context, TfLiteNode* node) {
   return kTfLiteOk;
 }
 
+#ifdef TFLITE_MODEL_COMPILER
+TfLiteStatus CompileInt8(TfLiteContext* context, TfLiteNode* node,
+                         TfLiteCompileStep step, std::ofstream& ofs) {
+  switch (step) {
+    case kTfLiteCompileStepInclude:
+      ofs << "#include \"Include/arm_nnfunctions.h\"" << std::endl
+          << "#include \"tensorflow/lite/micro/kernels/pooling.h\""
+          << std::endl;
+      break;
+    case kTfLiteCompileStepEval: {
+      const TfLiteEvalTensor* input = tflite::micro::GetEvalInput(
+          context, node, kPoolingInputTensor);
+      TfLiteEvalTensor* output = tflite::micro::GetEvalOutput(
+          context, node, kPoolingOutputTensor);
+      TFLITE_DCHECK((input->type == kTfLiteInt8));
+
+      RuntimeShape input_shape = micro::GetTensorShape(input);
+      TFLITE_DCHECK_EQ(input_shape.DimensionsCount(), 4);
+
+      RuntimeShape output_shape = micro::GetTensorShape(output);
+      TFLITE_DCHECK_EQ(output_shape.DimensionsCount(), 4);
+
+      const int depth = MatchingDim(input_shape, 3, output_shape, 3);
+
+      TFLITE_DCHECK(node->user_data != nullptr);
+      const OpData& data = *(static_cast<const OpData*>(node->user_data));
+
+      TFLITE_DCHECK(node->builtin_data != nullptr);
+      auto* params = reinterpret_cast<TfLitePoolParams*>(node->builtin_data);
+      // Compile parameters.
+      ofs << "{ // cmsis nn max pool int8" << std::endl;
+
+      tflite::micro::CompileAddress(
+          ofs, "input_data", tflite::micro::GetTensorData<int8_t>(input));
+      tflite::micro::CompileAddress(
+          ofs, "output_data", tflite::micro::GetTensorData<int8_t>(output));
+      ofs << "static const cmsis_nn_pool_params pool_params = {"
+          << ".stride={.w=" << params->stride_width
+          << ", .h=" << params->stride_height
+          << "}, .padding={.w=" << data.reference_op_data.padding.width
+          << ", .h=" << data.reference_op_data.padding.height
+          << "}, .activation={.min=" << data.reference_op_data.activation_min
+          << ", .max=" << data.reference_op_data.activation_max
+          << "}};" << std::endl;
+      ofs << "static const cmsis_nn_dims input_dims = {.n=1"
+          << ", .h=" << input_shape.Dims(1)
+          << ", .w=" << input_shape.Dims(2)
+          << ", .c=" << depth << "};" << std::endl;
+      ofs << "static const cmsis_nn_dims filter_dims = {.n=1"
+          << ", .h=" << params->filter_height
+          << ", .w=" << params->filter_width
+          << ", .c=1};" << std::endl;
+      ofs << "static const cmsis_nn_dims output_dims = {.n=1"
+          << ", .h=" << output_shape.Dims(1)
+          << ", .w=" << output_shape.Dims(2)
+          << ", .c=" << depth << "};" << std::endl;
+      ofs << "static const cmsis_nn_context ctx = {.buf=";
+      if (data.buffer_idx > -1) {
+        tflite::micro::CompileAddress(
+            ofs, context->GetScratchBuffer(context, data.buffer_idx));
+      } else {
+        ofs << "nullptr";
+      }
+      ofs << ", .size=0};" << std::endl;
+      // Compile computation.
+      ofs << "arm_max_pool_s8(&ctx, &pool_params, &input_dims, "
+          << "reinterpret_cast<int8_t*>(input_data), "
+          << "&filter_dims, &output_dims, "
+          << "reinterpret_cast<int8_t*>(output_data));"
+          << std::endl;
+      ofs << "}" << std::endl;
+    } break;
+    default:
+      return kTfLiteError;
+  }
+  return kTfLiteOk;
+}
+#endif
+
 }  // namespace
 
 TFLMRegistration Register_AVERAGE_POOL_2D_INT8() {
@@ -332,7 +411,12 @@ TFLMRegistration Register_AVERAGE_POOL_2D() {
 }
 
 TFLMRegistration Register_MAX_POOL_2D_INT8() {
+#ifdef TFLITE_MODEL_COMPILER
+  return tflite::micro::CompileOp(Init, MaxPrepare, MaxEvalInt8,
+                                  CompileInt8);
+#else
   return tflite::micro::RegisterOp(Init, MaxPrepare, MaxEvalInt8);
+#endif
 }
 
 TFLMRegistration Register_MAX_POOL_2D_INT16() {
