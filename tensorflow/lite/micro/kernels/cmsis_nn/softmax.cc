@@ -188,6 +188,47 @@ TfLiteStatus SoftmaxEvalInt16(TfLiteContext* context, TfLiteNode* node) {
   return kTfLiteOk;
 }
 
+#ifdef TFLITE_MODEL_COMPILER
+TfLiteStatus CompileInt8(TfLiteContext* context, TfLiteNode* node,
+                         TfLiteCompileStep step, std::ofstream& ofs) {
+  switch (step) {
+    case kTfLiteCompileStepInclude:
+      ofs << "#include \"Include/arm_nnfunctions.h\"" << std::endl
+          << "#include \"tensorflow/lite/micro/kernels/softmax.h\""
+          << std::endl;
+      break;
+    case kTfLiteCompileStepEval: {
+      const TfLiteEvalTensor* input = tflite::micro::GetEvalInput(
+          context, node, 0);
+      TfLiteEvalTensor* output = tflite::micro::GetEvalOutput(
+          context, node, 0);
+      TFLITE_DCHECK(node->user_data != nullptr);
+      const CMSISNNSoftmaxParams op_data =
+          *static_cast<const CMSISNNSoftmaxParams*>(node->user_data);
+      // Compile parameters.
+      ofs << "{ // cmsis nn softmax int8" << std::endl;
+
+      tflite::micro::CompileAddress(
+          ofs, "input_data", tflite::micro::GetTensorData<int8_t>(input));
+      tflite::micro::CompileAddress(
+          ofs, "output_data", tflite::micro::GetTensorData<int8_t>(output));
+      // Compile computation.
+      ofs << "arm_softmax_s8(reinterpret_cast<int8_t*>(input_data), "
+          << op_data.num_rows << ", " << op_data.row_size << ", "
+          << op_data.softmax_params.input_multiplier << ", "
+          << op_data.softmax_params.input_left_shift << ", "
+          << op_data.softmax_params.diff_min << ", "
+          << "reinterpret_cast<int8_t*>(output_data));"
+          << std::endl;
+      ofs << "}" << std::endl;
+    } break;
+    default:
+      return kTfLiteError;
+  }
+  return kTfLiteOk;
+}
+#endif
+
 }  // namespace
 
 TFLMRegistration Register_SOFTMAX() {
@@ -195,7 +236,12 @@ TFLMRegistration Register_SOFTMAX() {
 }
 
 TFLMRegistration Register_SOFTMAX_INT8() {
+#ifdef TFLITE_MODEL_COMPILER
+  return tflite::micro::CompileOp(Init, Prepare, SoftmaxEvalInt8,
+                                  CompileInt8);
+#else
   return tflite::micro::RegisterOp(Init, Prepare, SoftmaxEvalInt8);
+#endif
 }
 
 TFLMRegistration Register_SOFTMAX_INT8_INT16() {
