@@ -35,6 +35,11 @@ TfLiteStatus EvalQuantizeReference(TfLiteContext* context, TfLiteNode* node);
 TfLiteStatus EvalQuantizeReferenceFloat32ToInt8(TfLiteContext* context, TfLiteNode* node);
 TfLiteStatus PrepareQuantizeReference(TfLiteContext* context, TfLiteNode* node);
 
+#ifdef TFLITE_MODEL_COMPILER
+TfLiteStatus CompileQuantizeReferenceFloat32ToInt8(TfLiteContext* context, TfLiteNode* node,
+                                                   TfLiteCompileStep step, std::ofstream& ofs);
+#endif
+
 TFLMRegistration Register_QUANTIZE_FLOAT32_INT8();
 }  // namespace tflite
 

@@ -252,4 +252,60 @@ TfLiteStatus EvalQuantizeReferenceFloat32ToInt8(TfLiteContext* context, TfLiteNo
   return kTfLiteOk;
 }
 
+#ifdef TFLITE_MODEL_COMPILER
+TfLiteStatus CompileQuantizeReferenceFloat32ToInt8(TfLiteContext* context, TfLiteNode* node,
+                                                   TfLiteCompileStep step, std::ofstream& ofs) {
+  switch (step) {
+    case kTfLiteCompileStepInclude:
+      ofs << "#include \"tensorflow/lite/micro/kernels/quantize.h\"" << std::endl
+          << "#include \"tensorflow/lite/kernels/internal/reference/quantize.h\""
+          << std::endl;
+      break;
+
+    case kTfLiteCompileStepEval: {
+      TFLITE_DCHECK(node->user_data != nullptr);
+      auto* data = static_cast<OpDataQuantizeReference*>(node->user_data);
+
+      const TfLiteEvalTensor* input = tflite::micro::GetEvalInput(context, node, 0);
+      TfLiteEvalTensor* output = tflite::micro::GetEvalOutput(context, node, 0);
+      TFLITE_DCHECK(input->type == kTfLiteFloat32 && output->type == kTfLiteInt8);
+
+      ofs << "{ // quantize float to int8" << std::endl;
+
+      tflite::micro::CompileAddress(ofs, "input_data", input->data.data);
+      tflite::micro::CompileAddress(ofs, "output_data", output->data.data);
+
+      ofs << "static const tflite::QuantizationParams op_params = {"
+          << ".zero_point = " << data->quantization_params.zero_point
+          << ", .scale = " << data->quantization_params.scale << "};"
+          << std::endl;
+
+      tflite::micro::CompileArray(ofs, "const int32_t", "input_dims_data",
+                                  input->dims->data, input->dims->size);
+
+      tflite::micro::CompileArray(ofs, "const int32_t", "output_dims_data",
+                                  output->dims->data, output->dims->size);
+
+      ofs << "tflite::reference_ops::AffineQuantize(op_params, "
+             "tflite::RuntimeShape("
+          << input->dims->size
+          << ", input_dims_data), "
+             "reinterpret_cast<float*>(input_data), "
+             "tflite::RuntimeShape("
+          << output->dims->size
+          << ", output_dims_data), "
+             "reinterpret_cast<int8_t*>(output_data));"
+          << std::endl;
+
+      ofs << "}" << std::endl;
+    } break;
+
+    default:
+      return kTfLiteError;
+  }
+
+  return kTfLiteOk;
+}
+#endif
+
 }  // namespace tflite
