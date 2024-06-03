@@ -92,14 +92,76 @@ TfLiteStatus DequantizeEvalInt8(TfLiteContext* context, TfLiteNode* node) {
   return kTfLiteOk;
 }
 
+#ifdef TFLITE_MODEL_COMPILER
+TfLiteStatus DequantizeCompileInt8(TfLiteContext* context, TfLiteNode* node,
+                                   TfLiteCompileStep step, std::ofstream& ofs) {
+  switch (step) {
+    case kTfLiteCompileStepInclude:
+      ofs << "#include \"tensorflow/lite/micro/kernels/dequantize.h\"" << std::endl
+          << "#include \"tensorflow/lite/kernels/internal/reference/dequantize.h\""
+          << std::endl;
+      break;
+
+    case kTfLiteCompileStepEval: {
+      TFLITE_DCHECK(node->user_data != nullptr);
+      DequantizeOpData* data = static_cast<DequantizeOpData*>(node->user_data);
+
+      const TfLiteEvalTensor* input = tflite::micro::GetEvalInput(context, node, 0);
+      TfLiteEvalTensor* output = tflite::micro::GetEvalOutput(context, node, 0);
+      TFLITE_DCHECK(input->type == kTfLiteInt8 && output->type == kTfLiteFloat32);
+
+      ofs << "{ // dequantize int8 to float" << std::endl;
+
+      tflite::micro::CompileAddress(ofs, "input_data", input->data.data);
+      tflite::micro::CompileAddress(ofs, "output_data", output->data.data);
+
+      ofs << "static const tflite::DequantizationParams op_params = {"
+          << ".scale = " << data->quantization_params.scale
+          << ", .zero_point = " << data->quantization_params.zero_point
+          << "};"
+          << std::endl;
+
+      tflite::micro::CompileArray(ofs, "const int32_t", "input_dims_data",
+                                  input->dims->data, input->dims->size);
+
+      tflite::micro::CompileArray(ofs, "const int32_t", "output_dims_data",
+                                  output->dims->data, output->dims->size);
+
+      ofs << "tflite::reference_ops::Dequantize(op_params, "
+             "tflite::RuntimeShape("
+          << input->dims->size
+          << ", input_dims_data), "
+             "reinterpret_cast<int8_t*>(input_data), "
+             "tflite::RuntimeShape("
+          << output->dims->size
+          << ", output_dims_data), "
+             "reinterpret_cast<float*>(output_data));"
+          << std::endl;
+
+      ofs << "}" << std::endl;
+    } break;
+
+    default:
+      return kTfLiteError;
+  }
+
+  return kTfLiteOk;
+}
+#endif
+
 TFLMRegistration Register_DEQUANTIZE() {
   return tflite::micro::RegisterOp(DequantizeInit, DequantizePrepare,
                                    DequantizeEval);
 }
 
 TFLMRegistration Register_DEQUANTIZE_INT8() {
+#ifdef TFLITE_MODEL_COMPILER
+  return tflite::micro::CompileOp(DequantizeInit, DequantizePrepare,
+                                  DequantizeEvalInt8, DequantizeCompileInt8);
+#else
   return tflite::micro::RegisterOp(DequantizeInit, DequantizePrepare,
                                    DequantizeEvalInt8);
+#endif
 }
 
 }  // namespace tflite
