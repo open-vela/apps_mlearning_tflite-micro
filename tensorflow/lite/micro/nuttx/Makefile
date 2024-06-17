@@ -34,3 +34,7 @@ OLD_SRCS += $(addprefix $(TFLM_DIR)/tensorflow/lite/micro/kernels/, $(notdir $(N
 OLD_SRCS += $(addprefix $(TFLM_DIR)/tensorflow/lite/micro/kernels/cmsis_nn/, $(notdir $(NEW_SRCS)))
 CXXSRCS := $(filter-out $(OLD_SRCS), $(CXXSRCS))
 CXXSRCS += $(NEW_SRCS)
+
+ifneq ($(CONFIG_TFLITEMICRO_TOOL),)
+  COMMON_FLAGS += -DTFLITE_MODEL_COMPILER
+endif
