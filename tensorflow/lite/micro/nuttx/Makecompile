@@ -1,0 +1,46 @@
+# Copyright 2024 The TensorFlow Authors. All Rights Reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ==============================================================================
+# Warning!!! This Makefile can only used for model.cc
+#	read	APPDIR
+#	write	CXXFLAGS
+
+CXXFLAGS += -I$(APPDIR)/mlearning/tflite-micro/tflite-micro
+CXXFLAGS += -I$(APPDIR)/math/gemmlowp/gemmlowp
+CXXFLAGS += -I$(APPDIR)/math/kissfft/kissfft
+CXXFLAGS += -I$(APPDIR)/math/ruy/ruy
+CXXFLAGS += -Wno-shadow
+CXXFLAGS += -Wno-sign-compare
+CXXFLAGS += -Wno-undef
+CXXFLAGS += -Wno-unused-variable
+CXXFLAGS += -DTFLITE_EMULATE_FLOAT
+CXXFLAGS += -DTF_LITE_DISABLE_X86_NEON
+ifneq ($(CONFIG_TFLITEMICRO_DEBUG),)
+CXXFLAGS += -DTF_LITE_SHOW_MEMORY_USE
+CXXFLAGS += -DTF_LITE_USE_CTIME
+else
+CXXFLAGS += -DTF_LITE_STRIP_ERROR_STRINGS
+endif
+
+ifneq ($(CONFIG_MLEARNING_CMSIS_NN),)
+  CXXFLAGS += -DCMSIS_NN
+  CXXFLAGS += -I$(APPDIR)/mlearning/cmsis-nn/cmsis-nn
+endif
+
+ifneq ($(CONFIG_BES_BECO_CONV),)
+  CXXFLAGS += -I$(APPDIR)/vendor/bes/framework/services/include/beco
+  CXXFLAGS += -I$(APPDIR)/vendor/bes/framework/services/include/beco/beco_nn
+  CXXFLAGS += -I$(APPDIR)/vendor/bes/framework/services/include/cmsis_dsp
+  CXXFLAGS += -I$(APPDIR)/vendor/bes/framework/services/platform/cmsis/inc
+endif
