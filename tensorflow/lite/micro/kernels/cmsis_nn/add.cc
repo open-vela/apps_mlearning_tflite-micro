@@ -376,6 +376,119 @@ TfLiteStatus EvalAddInt8(TfLiteContext* context, TfLiteNode* node) {
   return kTfLiteOk;
 }
 
+#ifdef TFLITE_MODEL_COMPILER
+TfLiteStatus CompileAddInt8(TfLiteContext* context, TfLiteNode* node,
+                            TfLiteCompileStep step, std::ofstream& ofs) {
+  switch (step) {
+    case kTfLiteCompileStepInclude:
+      ofs << "#include \"tensorflow/lite/kernels/internal/reference/add.h\""
+          << std::endl
+          << "#include \"tensorflow/lite/kernels/internal/reference"
+          << "/integer_ops/add.h\""
+          << std::endl
+          << "#include \"Include/arm_nnfunctions.h\""
+          << std::endl;
+      break;
+
+    case kTfLiteCompileStepEval: {
+      const TfLiteEvalTensor* input1 =
+          tflite::micro::GetEvalInput(context, node, kInputTensor1);
+      const TfLiteEvalTensor* input2 =
+          tflite::micro::GetEvalInput(context, node, kInputTensor2);
+      TfLiteEvalTensor* output =
+          tflite::micro::GetEvalOutput(context, node, kOutputTensor);
+
+      TFLITE_DCHECK(node->user_data != nullptr);
+      TFLITE_DCHECK(output->type == kTfLiteInt8);
+      const OpData* data = static_cast<const OpData*>(node->user_data);
+
+      tflite::ArithmeticParams op_params;
+      UpdateOpParams(&op_params, data);
+
+      bool need_broadcast = reference_ops::ProcessBroadcastShapes(
+          tflite::micro::GetTensorShape(input1),
+          tflite::micro::GetTensorShape(input2), &op_params);
+
+      ofs << "{ // add int8" << std::endl;
+
+      tflite::micro::CompileAddress(
+          ofs, "input1", tflite::micro::GetTensorData<int8_t>(input1));
+      tflite::micro::CompileAddress(
+          ofs, "input2", tflite::micro::GetTensorData<int8_t>(input2));
+      tflite::micro::CompileAddress(
+          ofs, "output", tflite::micro::GetTensorData<int8_t>(output));
+
+      if (need_broadcast) {
+        ofs << "tflite::ArithmeticParams op_params = {"
+            << ".broadcast_category="
+            << "static_cast<tflite::BroadcastableOpCategory>("
+            << static_cast<unsigned int>(op_params.broadcast_category)
+            << "), "
+            << ".input1_offset=" << op_params.input1_offset << ", "
+            << ".input2_offset=" << op_params.input2_offset << ", "
+            << ".output_offset=" << op_params.output_offset << ", "
+            << ".output_multiplier=" << op_params.output_multiplier << ", "
+            << ".output_shift=" << op_params.output_shift << ", "
+            << ".left_shift=" << op_params.left_shift << ", "
+            << ".input1_multiplier=" << op_params.input1_multiplier << ", "
+            << ".input1_shift=" << op_params.input1_shift << ", "
+            << ".input2_multiplier=" << op_params.input2_multiplier << ", "
+            << ".input2_shift=" << op_params.input2_shift << ", "
+            << ".quantized_activation_min="
+            << op_params.quantized_activation_min << ", "
+            << ".quantized_activation_max="
+            << op_params.quantized_activation_max << "}};"
+            << std::endl;
+
+        tflite::micro::CompileArray(ofs, "const int32_t", "input1_dims_data",
+                            input1->dims->data, input1->dims->size);
+        tflite::micro::CompileArray(ofs, "const int32_t", "input2_dims_data",
+                            input2->dims->data, input2->dims->size);
+        tflite::micro::CompileArray(ofs, "const int32_t", "output_dims_data",
+                                    output->dims->data, output->dims->size);
+
+        ofs << "tflite::reference_integer_ops::BroadcastAdd4DSlow(op_params, "
+            << "tflite::RuntimeShape(" << input1->dims->size
+            << ", input1_dims_data), " << "input1, "
+            << "tflite::RuntimeShape(" << input2->dims->size
+            << ", input2_dims_data), " << "input2, "
+            << "tflite::RuntimeShape(" << output->dims->size
+            << ", output_dims_data), " << "output);"
+            << std::endl;
+      } else {
+        const auto shape1 = tflite::micro::GetTensorShape(input1);
+        const auto shape2 = tflite::micro::GetTensorShape(input2);
+        const auto shape3 = tflite::micro::GetTensorShape(output);
+        const int32_t block_size = MatchingElementsSize(shape1, shape2, shape3);
+
+        ofs << "arm_elementwise_add_s8(input1, input2, "
+            << op_params.input1_offset << ", "
+            << op_params.input1_multiplier << ", "
+            << op_params.input1_shift << ", "
+            << op_params.input2_offset << ", "
+            << op_params.input2_multiplier << ", "
+            << op_params.input2_shift << ", "
+            << op_params.left_shift << ", output, "
+            << op_params.output_offset << ", "
+            << op_params.output_multiplier << ", "
+            << op_params.output_shift << ", "
+            << op_params.quantized_activation_min << ", "
+            << op_params.quantized_activation_max << ", "
+            << block_size << ");" << std::endl;
+      }
+
+      ofs << "}" << std::endl;
+
+    } break;
+
+    default:
+      return kTfLiteError;
+  }
+
+  return kTfLiteOk;
+}
+#endif
+
 TfLiteStatus EvalAddInt16(TfLiteContext* context, TfLiteNode* node) {
   auto* params = reinterpret_cast<TfLiteAddParams*>(node->builtin_data);
 
@@ -401,7 +514,12 @@ TFLMRegistration Register_ADD() {
 }
 
 TFLMRegistration Register_ADD_INT8() {
+#ifdef TFLITE_MODEL_COMPILER
+  return tflite::micro::CompileOp(InitAdd, PrepareAdd, EvalAddInt8,
+                                  CompileAddInt8);
+#else
   return tflite::micro::RegisterOp(InitAdd, PrepareAdd, EvalAddInt8);
+#endif
 }
 
 TFLMRegistration Register_ADD_INT16() {
