@@ -383,8 +383,10 @@ TfLiteStatus CommonCompileInt8(TfLiteContext* context, TfLiteNode* node,
       }
       ofs << ", .size=0};" << std::endl;
       // Compile computation.
-      if (type == 1)
+      if (type)
         ofs << "arm_max_pool_s8";
+      else
+        ofs << "arm_avgpool_s8";
       ofs << "(&ctx, &pool_params, &input_dims, "
           << "reinterpret_cast<int8_t*>(input_data), "
           << "&filter_dims, &output_dims, "
@@ -398,6 +400,11 @@ TfLiteStatus CommonCompileInt8(TfLiteContext* context, TfLiteNode* node,
   return kTfLiteOk;
 }
 
+TfLiteStatus AverageCompileInt8(TfLiteContext* context, TfLiteNode* node,
+                         TfLiteCompileStep step, std::ofstream& ofs) {
+  return CommonCompileInt8(context, node, step, ofs, 0);
+}
+
 TfLiteStatus MaxCompileInt8(TfLiteContext* context, TfLiteNode* node,
                          TfLiteCompileStep step, std::ofstream& ofs) {
   return CommonCompileInt8(context, node, step, ofs, 1);
@@ -407,7 +414,12 @@ TfLiteStatus MaxCompileInt8(TfLiteContext* context, TfLiteNode* node,
 }  // namespace
 
 TFLMRegistration Register_AVERAGE_POOL_2D_INT8() {
+#ifdef TFLITE_MODEL_COMPILER
+  return tflite::micro::CompileOp(Init, AveragePrepare, AverageEvalInt8,
+                                  AverageCompileInt8);
+#else
   return tflite::micro::RegisterOp(Init, AveragePrepare, AverageEvalInt8);
+#endif
 }
 
 TFLMRegistration Register_AVERAGE_POOL_2D_INT16() {
