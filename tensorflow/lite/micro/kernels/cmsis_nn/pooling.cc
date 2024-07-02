@@ -318,8 +318,9 @@ TfLiteStatus MaxEvalInt16(TfLiteContext* context, TfLiteNode* node) {
 }
 
 #ifdef TFLITE_MODEL_COMPILER
-TfLiteStatus CompileInt8(TfLiteContext* context, TfLiteNode* node,
-                         TfLiteCompileStep step, std::ofstream& ofs) {
+TfLiteStatus CommonCompileInt8(TfLiteContext* context, TfLiteNode* node,
+                         TfLiteCompileStep step, std::ofstream& ofs,
+                         int type) {
   switch (step) {
     case kTfLiteCompileStepInclude:
       ofs << "#include \"Include/arm_nnfunctions.h\"" << std::endl
@@ -347,7 +348,7 @@ TfLiteStatus CompileInt8(TfLiteContext* context, TfLiteNode* node,
       TFLITE_DCHECK(node->builtin_data != nullptr);
       auto* params = reinterpret_cast<TfLitePoolParams*>(node->builtin_data);
       // Compile parameters.
-      ofs << "{ // cmsis nn max pool int8" << std::endl;
+      ofs << "{ // cmsis nn pool int8" << std::endl;
 
       tflite::micro::CompileAddress(
           ofs, "input_data", tflite::micro::GetTensorData<int8_t>(input));
@@ -382,7 +383,9 @@ TfLiteStatus CompileInt8(TfLiteContext* context, TfLiteNode* node,
       }
       ofs << ", .size=0};" << std::endl;
       // Compile computation.
-      ofs << "arm_max_pool_s8(&ctx, &pool_params, &input_dims, "
+      if (type == 1)
+        ofs << "arm_max_pool_s8";
+      ofs << "(&ctx, &pool_params, &input_dims, "
           << "reinterpret_cast<int8_t*>(input_data), "
           << "&filter_dims, &output_dims, "
           << "reinterpret_cast<int8_t*>(output_data));"
@@ -393,6 +396,11 @@ TfLiteStatus CompileInt8(TfLiteContext* context, TfLiteNode* node,
       return kTfLiteError;
   }
   return kTfLiteOk;
+}
+
+TfLiteStatus MaxCompileInt8(TfLiteContext* context, TfLiteNode* node,
+                         TfLiteCompileStep step, std::ofstream& ofs) {
+  return CommonCompileInt8(context, node, step, ofs, 1);
 }
 #endif
 
@@ -413,7 +421,7 @@ TFLMRegistration Register_AVERAGE_POOL_2D() {
 TFLMRegistration Register_MAX_POOL_2D_INT8() {
 #ifdef TFLITE_MODEL_COMPILER
   return tflite::micro::CompileOp(Init, MaxPrepare, MaxEvalInt8,
-                                  CompileInt8);
+                                  MaxCompileInt8);
 #else
   return tflite::micro::RegisterOp(Init, MaxPrepare, MaxEvalInt8);
 #endif
