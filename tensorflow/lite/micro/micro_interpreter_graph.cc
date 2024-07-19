@@ -291,6 +291,13 @@ int MicroInterpreterGraph::NumSubgraphs() {
   return model_->subgraphs()->size();
 }
 
+#ifdef CONFIG_MICRO_DELEGATE
+TfLiteStatus MicroInterpreterGraph::ModifyGraphWithDelegate(
+    TfLiteDelegate* delegate) {
+  return delegate->Prepare(context_, delegate);
+}
+#endif
+
 void MicroInterpreterGraph::SetSubgraphAllocations(
     SubgraphAllocations* subgraph_allocations) {
   subgraph_allocations_ = subgraph_allocations;

@@ -86,6 +86,11 @@ MicroInterpreter::~MicroInterpreter() {
   if (graph_.GetAllocations() != nullptr) {
     graph_.FreeSubgraphs();
   }
+#ifdef CONFIG_MICRO_DELEGATE
+  for (auto delegate: delegates_) {
+    tflite::TfLiteDelegateFactory::DeleteSimpleDelegate(delegate);
+  }
+#endif
 }
 
 void MicroInterpreter::Init(MicroProfilerInterface* profiler) {
@@ -388,5 +393,14 @@ TfLiteStatus MicroInterpreter::SetMicroExternalContext(
     void* external_context_payload) {
   return micro_context_.set_external_context(external_context_payload);
 }
+
+#ifdef CONFIG_MICRO_DELEGATE
+TfLiteStatus MicroInterpreter::ModifyGraphWithDelegate(
+    TfLiteDelegate* delegate) {
+  if (delegate == nullptr) return kTfLiteDelegateError;
+  delegates_.push_back(delegate);
+  return graph_.ModifyGraphWithDelegate(delegate);
+}
+#endif
 
 }  // namespace tflite
