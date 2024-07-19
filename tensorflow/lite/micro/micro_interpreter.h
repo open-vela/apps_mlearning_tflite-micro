@@ -145,6 +145,10 @@ class MicroInterpreter {
   // arena_used_bytes() + 16.
   size_t arena_used_bytes() const { return allocator_.used_bytes(); }
 
+#ifdef CONFIG_MICRO_DELEGATE
+  TfLiteStatus ModifyGraphWithDelegate(TfLiteDelegate* delegate);
+#endif
+
   // Returns True if all Tensors are being preserves
   // TODO(b/297106074) : revisit making C++ example or test for
   // preserve_all_tesnors
@@ -181,6 +185,10 @@ class MicroInterpreter {
   TfLiteTensor** output_tensors_;
 
   MicroInterpreterContext micro_context_;
+
+#ifdef CONFIG_MICRO_DELEGATE
+  std::vector<TfLiteDelegate*> delegates_;
+#endif
 };
 
 }  // namespace tflite
