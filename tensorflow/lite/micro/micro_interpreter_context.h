@@ -21,6 +21,7 @@ limitations under the License.
 #include "tensorflow/lite/micro/micro_context.h"
 #include "tensorflow/lite/micro/micro_interpreter_graph.h"
 #include "tensorflow/lite/micro/micro_log.h"
+#include "tensorflow/lite/micro/micro_common.h"
 
 namespace tflite {
 
@@ -96,6 +97,26 @@ class MicroInterpreterContext : public MicroContext {
   // an object that outlive this class instance.
   // This can only be called once to set one external context.
   TfLiteStatus set_external_context(void* external_context_payload) override;
+
+#ifdef CONFIG_MICRO_DELEGATE
+  virtual TfLiteStatus GetNodeAndRegistration(
+      int node_index, TfLiteNode** node,
+      const struct TFLMRegistration** registration);
+
+  virtual TfLiteStatus GetExecutionPlan(TfLiteIntArray** execution_plan);
+
+  virtual TfLiteStatus ReplaceNodeSubsetsWithDelegateKernels(
+      TfLiteContext* context,
+      struct TFLMRegistration *registration,
+      const TfLiteIntArray* nodes_to_replace,
+      std::vector<TfLiteDelegateParams*> partitions,
+      struct TfLiteDelegate* delegate);
+
+  virtual TfLiteStatus PreviewDelegatePartitioning(
+      const TfLiteIntArray* execution_plan,
+      const TfLiteIntArray* nodes_to_replace,
+      std::vector<TfLiteDelegateParams*>* partition_params_array);
+#endif
 
   void* external_context() override { return external_context_payload_; }
 

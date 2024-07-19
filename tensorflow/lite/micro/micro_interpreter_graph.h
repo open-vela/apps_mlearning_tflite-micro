@@ -84,6 +84,10 @@ class MicroInterpreterGraph : public MicroGraph {
   // Number of subgraphs in the model.
   virtual int NumSubgraphs();
 
+#ifdef CONFIG_MICRO_DELEGATE
+  virtual TfLiteStatus ModifyGraphWithDelegate(TfLiteDelegate* delegate);
+#endif
+
   // Hook to pass in subgraph allocations tracked within the interpreter,
   // allowing MicroInterpreterGraph to init / prepare / invoke subgraphs in the
   // model.
