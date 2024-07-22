@@ -35,6 +35,7 @@ limitations under the License.
 #include "tensorflow/lite/micro/kernels/quantize.h"
 #include "tensorflow/lite/micro/kernels/reduce.h"
 #include "tensorflow/lite/micro/kernels/softmax.h"
+#include "tensorflow/lite/micro/kernels/sub.h"
 #include "tensorflow/lite/micro/kernels/transpose_conv.h"
 #include "tensorflow/lite/micro/micro_log.h"
 #include "tensorflow/lite/micro/micro_op_resolver.h"
@@ -606,8 +607,9 @@ class MicroMutableOpResolver : public MicroOpResolver {
     return AddCustom("SignalStacker", tflite::tflm_signal::Register_STACKER());
   }
 
-  TfLiteStatus AddSub() {
-    return AddBuiltin(BuiltinOperator_SUB, tflite::Register_SUB(), ParseSub);
+  TfLiteStatus AddSub(
+    const TFLMRegistration& registration = Register_SUB()) {
+    return AddBuiltin(BuiltinOperator_SUB, registration, ParseSub);
   }
 
   TfLiteStatus AddSum() {
