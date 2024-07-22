@@ -161,6 +161,133 @@ TfLiteStatus SubEval(TfLiteContext* context, TfLiteNode* node) {
   return kTfLiteOk;
 }
 
+#ifdef TFLITE_MODEL_COMPILER
+TfLiteStatus SubCompileInt8(TfLiteContext* context, TfLiteNode* node,
+                            TfLiteCompileStep step, std::ofstream& ofs) {
+  switch (step) {
+    case kTfLiteCompileStepInclude:
+      ofs << "#include \"tensorflow/lite/micro/kernels/sub.h\""
+          << std::endl
+          << "#include \"tensorflow/lite/kernels/internal/reference/sub.h\""
+          << std::endl;
+      break;
+
+    case kTfLiteCompileStepEval: {
+      TFLITE_DCHECK(node->user_data != nullptr);
+
+      auto* params = reinterpret_cast<TfLiteSubParams*>(node->builtin_data);
+
+      const TfLiteEvalTensor* input1 =
+          tflite::micro::GetEvalInput(context, node, kSubInputTensor1);
+      const TfLiteEvalTensor* input2 =
+          tflite::micro::GetEvalInput(context, node, kSubInputTensor2);
+      TfLiteEvalTensor* output =
+          tflite::micro::GetEvalOutput(context, node, kSubOutputTensor);
+      TFLITE_DCHECK(output->type == kTfLiteInt8);
+
+      const OpDataSub* data = (static_cast<const OpDataSub*>(node->user_data));
+
+      tflite::ArithmeticParams op_params;
+      op_params.left_shift = data->left_shift;
+      op_params.input1_offset = data->input1_offset;
+      op_params.input1_multiplier = data->input1_multiplier;
+      op_params.input1_shift = data->input1_shift;
+      op_params.input2_offset = data->input2_offset;
+      op_params.input2_multiplier = data->input2_multiplier;
+      op_params.input2_shift = data->input2_shift;
+      op_params.output_offset = data->output_offset;
+      op_params.output_multiplier = data->output_multiplier;
+      op_params.output_shift = data->output_shift;
+
+      SetActivationParams(data->output_activation_min, data->output_activation_max,
+                          &op_params);
+
+      bool need_broadcast = reference_ops::ProcessBroadcastShapes(
+          tflite::micro::GetTensorShape(input1),
+          tflite::micro::GetTensorShape(input2), &op_params);
+
+      ofs << "{ // sub int8" << std::endl;
+
+      tflite::micro::CompileAddress(
+          ofs, "input1", tflite::micro::GetTensorData<int8_t>(input1));
+      tflite::micro::CompileAddress(
+          ofs, "input2", tflite::micro::GetTensorData<int8_t>(input2));
+      tflite::micro::CompileAddress(
+          ofs, "output", tflite::micro::GetTensorData<int8_t>(output));
+
+      ofs << "tflite::ArithmeticParams op_params = {"
+          << ".broadcast_category="
+          << "static_cast<tflite::BroadcastableOpCategory>("
+          << static_cast<unsigned int>(op_params.broadcast_category)
+          << "), "
+          << ".input1_offset=" << op_params.input1_offset << ", "
+          << ".input2_offset=" << op_params.input2_offset << ", "
+          << ".output_offset=" << op_params.output_offset << ", "
+          << ".output_multiplier=" << op_params.output_multiplier << ", "
+          << ".output_shift=" << op_params.output_shift << ", "
+          << ".left_shift=" << op_params.left_shift << ", "
+          << ".input1_multiplier=" << op_params.input1_multiplier << ", "
+          << ".input1_shift=" << op_params.input1_shift << ", "
+          << ".input2_multiplier=" << op_params.input2_multiplier << ", "
+          << ".input2_shift=" << op_params.input2_shift << ", "
+          << ".quantized_activation_min="
+          << op_params.quantized_activation_min << ", "
+          << ".quantized_activation_max="
+          << op_params.quantized_activation_max << ", "
+          << ".float_activation_min="
+          << op_params.float_activation_min << ", "
+          << ".float_activation_max="
+          << op_params.float_activation_max << ", "
+          << ".int64_activation_min="
+          << op_params.int64_activation_min << ", "
+          << ".int64_activation_max="
+          << op_params.int64_activation_max << ", "
+          << ".int16_activation_min="
+          << op_params.int16_activation_min << ", "
+          << ".int16_activation_max="
+          << op_params.int16_activation_max << ", "
+          << ".broadcast_shape={" << op_params.broadcast_shape[0] << ", "
+          << op_params.broadcast_shape[1] << ", "
+          << op_params.broadcast_shape[2] << ", "
+          << op_params.broadcast_shape[3] << ", "
+          << op_params.broadcast_shape[4] << "}};"
+          << std::endl;
+
+      tflite::micro::CompileArray(ofs, "const int32_t", "input1_dims_data",
+                          input1->dims->data, input1->dims->size);
+      tflite::micro::CompileArray(ofs, "const int32_t", "input2_dims_data",
+                          input2->dims->data, input2->dims->size);
+      tflite::micro::CompileArray(ofs, "const int32_t", "output_dims_data",
+                                  output->dims->data, output->dims->size);
+
+      if (need_broadcast) {
+        ofs << "tflite::reference_ops::BroadcastQuantSubSlow(";
+      } else {
+        ofs << "tflite::reference_ops::Sub(";
+      }
+
+      ofs << "op_params, "
+          << "tflite::RuntimeShape(" << input1->dims->size
+          << ", input1_dims_data), " << "input1, "
+          << "tflite::RuntimeShape(" << input2->dims->size
+          << ", input2_dims_data), " << "input2, "
+          << "tflite::RuntimeShape(" << output->dims->size
+          << ", output_dims_data), " << "output);"
+          << std::endl;
+
+      ofs << "}" << std::endl;
+
+    } break;
+
+    default:
+      return kTfLiteError;
+  }
+
+  return kTfLiteOk;
+
+}
+#endif
+
 TfLiteStatus SubEvalInt8(TfLiteContext* context, TfLiteNode* node) {
   auto* params = reinterpret_cast<TfLiteSubParams*>(node->builtin_data);
 
@@ -185,7 +312,11 @@ TFLMRegistration Register_SUB() {
 }
 
 TFLMRegistration Register_SUB_INT8() {
+#ifdef TFLITE_MODEL_COMPILER
+  return tflite::micro::CompileOp(SubInit, SubPrepare, SubEval, SubCompileInt8);
+#else
   return tflite::micro::RegisterOp(SubInit, SubPrepare, SubEvalInt8);
+#endif
 }
 
 }  // namespace tflite
