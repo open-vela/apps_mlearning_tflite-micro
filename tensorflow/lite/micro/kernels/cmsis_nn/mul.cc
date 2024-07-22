@@ -205,8 +205,9 @@ TfLiteStatus CompileInt8(TfLiteContext* context, TfLiteNode* node,
       if (need_broadcast) {
         ofs << "tflite::ArithmeticParams op_params = {"
             << ".broadcast_category="
-            << reference_ops::BroadcastableOpCategoryToString(
-                  op_params.broadcast_category) << ", "
+            << "static_cast<tflite::BroadcastableOpCategory>("
+            << static_cast<unsigned int>(op_params.broadcast_category)
+            << "), "
             << ".input1_offset=" << op_params.input1_offset << ", "
             << ".input2_offset=" << op_params.input2_offset << ", "
             << ".output_offset=" << op_params.output_offset << ", "
@@ -220,7 +221,24 @@ TfLiteStatus CompileInt8(TfLiteContext* context, TfLiteNode* node,
             << ".quantized_activation_min="
             << op_params.quantized_activation_min << ", "
             << ".quantized_activation_max="
-            << op_params.quantized_activation_max << "}};"
+            << op_params.quantized_activation_max << ", "
+            << ".float_activation_min="
+            << op_params.float_activation_min << ", "
+            << ".float_activation_max="
+            << op_params.float_activation_max << ", "
+            << ".int64_activation_min="
+            << op_params.int64_activation_min << ", "
+            << ".int64_activation_max="
+            << op_params.int64_activation_max << ", "
+            << ".int16_activation_min="
+            << op_params.int16_activation_min << ", "
+            << ".int16_activation_max="
+            << op_params.int16_activation_max << ", "
+            << ".broadcast_shape={" << op_params.broadcast_shape[0] << ", "
+            << op_params.broadcast_shape[1] << ", "
+            << op_params.broadcast_shape[2] << ", "
+            << op_params.broadcast_shape[3] << ", "
+            << op_params.broadcast_shape[4] << "}};"
             << std::endl;
 
         tflite::micro::CompileArray(ofs, "const int32_t", "input1_dims_data",
