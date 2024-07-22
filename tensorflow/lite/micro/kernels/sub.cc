@@ -161,8 +161,31 @@ TfLiteStatus SubEval(TfLiteContext* context, TfLiteNode* node) {
   return kTfLiteOk;
 }
 
+TfLiteStatus SubEvalInt8(TfLiteContext* context, TfLiteNode* node) {
+  auto* params = reinterpret_cast<TfLiteSubParams*>(node->builtin_data);
+
+  const TfLiteEvalTensor* input1 =
+      tflite::micro::GetEvalInput(context, node, kSubInputTensor1);
+  const TfLiteEvalTensor* input2 =
+      tflite::micro::GetEvalInput(context, node, kSubInputTensor2);
+  TfLiteEvalTensor* output =
+      tflite::micro::GetEvalOutput(context, node, kSubOutputTensor);
+
+  TFLITE_DCHECK(node->user_data != nullptr);
+  const OpDataSub& data = *(static_cast<const OpDataSub*>(node->user_data));
+
+  TFLITE_DCHECK(output->type == kTfLiteInt8);
+  TF_LITE_ENSURE_OK(context, EvalSubQuantized(context, node, params, &data,
+                                              input1, input2, output));
+  return kTfLiteOk;
+}
+
 TFLMRegistration Register_SUB() {
   return tflite::micro::RegisterOp(SubInit, SubPrepare, SubEval);
+}
+
+TFLMRegistration Register_SUB_INT8() {
+  return tflite::micro::RegisterOp(SubInit, SubPrepare, SubEvalInt8);
 }
 
 }  // namespace tflite

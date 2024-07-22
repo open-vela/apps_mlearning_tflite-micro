@@ -20,6 +20,7 @@ limitations under the License.
 
 #include "tensorflow/lite/c/builtin_op_data.h"
 #include "tensorflow/lite/c/common.h"
+#include "tensorflow/lite/micro/micro_common.h"
 
 namespace tflite {
 
@@ -54,6 +55,8 @@ TfLiteStatus CalculateOpDataSub(TfLiteContext* context, TfLiteSubParams* params,
                                 TfLiteTensor* output, OpDataSub* data);
 
 TfLiteStatus SubPrepare(TfLiteContext* context, TfLiteNode* node);
+
+TFLMRegistration Register_SUB_INT8();
 
 }  // namespace tflite
 
