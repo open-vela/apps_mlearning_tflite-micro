@@ -114,9 +114,95 @@ TfLiteStatus TransposeEval(TfLiteContext* context, TfLiteNode* node) {
   return kTfLiteOk;
 }
 
+#ifdef TFLITE_MODEL_COMPILER
+TfLiteStatus TransposeCompile(TfLiteContext* context, TfLiteNode* node,
+                              TfLiteCompileStep step, std::ofstream& ofs) {
+  switch (step) {
+    case kTfLiteCompileStepInclude:
+      ofs << "#include \"tensorflow/lite/kernels/internal/reference"
+          << "/transpose.h\"" << std::endl;
+      break;
+
+    case kTfLiteCompileStepEval: {
+      const TfLiteEvalTensor* perm_tensor =
+          tflite::micro::GetEvalInput(context, node, kPermTensor);
+      const int32_t* perm_data = perm_tensor->data.i32;
+      const int size = perm_tensor->dims->data[0];
+
+      const TfLiteEvalTensor* input =
+          tflite::micro::GetEvalInput(context, node, kInputTensor);
+      TfLiteEvalTensor* output =
+          tflite::micro::GetEvalOutput(context, node, kOutputTensor);
+
+      ofs << "{ // transpose" << std::endl;
+
+      tflite::micro::CompileAddress(
+          ofs, "input", tflite::micro::GetTensorData<int8_t>(input));
+      tflite::micro::CompileAddress(
+          ofs, "output", tflite::micro::GetTensorData<int8_t>(output));
+
+      ofs << "tflite::TransposeParams params = {"
+          << ".perm_count=" << size
+          << ",.perm={";
+      for (int i = 0; i < size; ++i) {
+        ofs << perm_data[i] << ",";
+      }
+      ofs << "}};" << std::endl;
+
+      tflite::micro::CompileArray(ofs, "const int32_t", "input_dims_data",
+                          input->dims->data, input->dims->size);
+      tflite::micro::CompileArray(ofs, "const int32_t", "output_dims_data",
+                          output->dims->data, output->dims->size);
+
+      switch (input->type) {
+        case kTfLiteFloat32:
+          ofs << "tflite::reference_ops::Transpose(params, "
+              << "tflite::RuntimeShape(" << input->dims->size
+              << ", input_dims_data), "
+              << "reinterpret_cast<float*>(input), "
+              << "tflite::RuntimeShape(" << output->dims->size
+              << ", output_dims_data), "
+              << "reinterpret_cast<float*>(output));"
+              << std::endl;
+          break;
+        case kTfLiteInt8:
+          ofs << "tflite::reference_ops::Transpose(params, "
+              << "tflite::RuntimeShape(" << input->dims->size
+              << ", input_dims_data), "
+              << "reinterpret_cast<int8_t*>(input), "
+              << "tflite::RuntimeShape(" << output->dims->size
+              << ", output_dims_data), "
+              << "reinterpret_cast<int8_t*>(output));"
+              << std::endl;
+          break;
+        default:
+          MicroPrintf(
+              "Type %s is currently not supported by Transpose. "
+              "Only float32 and int8 is supported",
+              TfLiteTypeGetName(input->type));
+          return kTfLiteError;
+      }
+
+      ofs << "}" << std::endl;
+
+    } break;
+
+    default:
+      return kTfLiteError;
+  }
+
+  return kTfLiteOk;
+}
+#endif
+
 }  // namespace
 
 TFLMRegistration Register_TRANSPOSE() {
+#ifdef TFLITE_MODEL_COMPILER
+  return tflite::micro::CompileOp(nullptr, TransposePrepare, TransposeEval,
+                                  TransposeCompile);
+#else
   return tflite::micro::RegisterOp(nullptr, TransposePrepare, TransposeEval);
+#endif
 }
 }  // namespace tflite
