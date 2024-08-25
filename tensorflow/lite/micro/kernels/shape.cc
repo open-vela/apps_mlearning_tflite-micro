@@ -58,10 +58,62 @@ TfLiteStatus ShapeEval(TfLiteContext* context, TfLiteNode* node) {
   return kTfLiteOk;
 }
 
+#ifdef TFLITE_MODEL_COMPILER
+TfLiteStatus ShapeCompile(TfLiteContext* context, TfLiteNode* node,
+                          TfLiteCompileStep step, std::ofstream& ofs) {
+  switch (step) {
+    case kTfLiteCompileStepInclude:
+      ofs << "#include <cstring>" << std::endl;
+      break;
+
+    case kTfLiteCompileStepEval: {
+
+      const TfLiteEvalTensor* input =
+          tflite::micro::GetEvalInput(context, node, kInputTensor);
+      TfLiteEvalTensor* output =
+          tflite::micro::GetEvalOutput(context, node, kOutputTensor);
+
+      if (output->type != kTfLiteInt32) {
+        ofs << "#error Unsupported output type" << std::endl;
+        return kTfLiteError;
+      } else {
+        ofs << "{ // shape" << std::endl;
+
+        tflite::micro::CompileAddress(ofs, "output_data", output->data.data);
+
+        ofs << "const int32_t input_dims_size = " << input->dims->size
+            << ";" << std::endl;
+
+        int32_t *input_dims_data = const_cast<int32_t*>(input->dims->data);
+
+        tflite::micro::CompileArray(ofs, "int32_t", "input_dims",
+                                    input_dims_data,
+                                    input->dims->size);
+
+        ofs << "memcpy(reinterpret_cast<int32_t*>(output_data),"
+            << "&input_dims, input_dims_size * sizeof(int32_t));" << std::endl;
+
+        ofs << "}" << std::endl;
+      }
+    } break;
+
+    default:
+      return kTfLiteError;
+  }
+
+  return kTfLiteOk;
+}
+#endif
+
 }  // namespace
 
 TFLMRegistration Register_SHAPE() {
+#ifdef TFLITE_MODEL_COMPILER
+  return tflite::micro::CompileOp(nullptr, ShapePrepare, ShapeEval,
+                                  ShapeCompile);
+#else
   return tflite::micro::RegisterOp(nullptr, ShapePrepare, ShapeEval);
+#endif
 }
 
 }  // namespace tflite
