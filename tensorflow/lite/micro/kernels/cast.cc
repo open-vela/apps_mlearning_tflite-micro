@@ -111,10 +111,81 @@ TfLiteStatus CastEval(TfLiteContext* context, TfLiteNode* node) {
   }
   return kTfLiteOk;
 }
+
+#ifdef TFLITE_MODEL_COMPILER
+std::string getTensorType(TfLiteType type) {
+  switch (type) {
+    case kTfLiteInt8:
+      return "int8_t";
+    case kTfLiteInt16:
+      return "int16_t";
+    case kTfLiteInt32:
+      return "int32_t";
+    case kTfLiteUInt32:
+      return "uint32_t";
+    case kTfLiteFloat32:
+      return "float";
+    default:
+      return "UNKNOWN";
+  }
+}
+
+TfLiteStatus CastCompile(TfLiteContext* context, TfLiteNode* node,
+                         TfLiteCompileStep step, std::ofstream& ofs) {
+  switch (step) {
+    case kTfLiteCompileStepInclude:
+      ofs << "#include <algorithm>" << std::endl;
+      break;
+
+    case kTfLiteCompileStepEval: {
+
+      const TfLiteEvalTensor* input =
+          tflite::micro::GetEvalInput(context, node, kInputTensor);
+      TfLiteEvalTensor* output =
+          tflite::micro::GetEvalOutput(context, node, kOutputTensor);
+      int num_cnts = MatchingFlatSize(tflite::micro::GetTensorShape(input),
+                                      tflite::micro::GetTensorShape(output));
+
+      ofs << "{ // cast" << std::endl;
+
+      tflite::micro::CompileAddress(ofs, "input_data", input->data.data);
+      tflite::micro::CompileAddress(ofs, "output_data", output->data.data);
+
+      ofs << "static int num_cnts = " << num_cnts << ";" << std::endl;
+
+      std::string input_type = getTensorType(input->type);
+      std::string output_type = getTensorType(output->type);
+
+      ofs << "std::transform("
+          << "reinterpret_cast<" << input_type << "*>(input_data), "
+          << "reinterpret_cast<" << input_type << "*>(input_data)"
+          << " + num_cnts, "
+          << "reinterpret_cast<" << output_type << "*>(output_data), "
+          << "[](" << input_type
+          << " a) { return static_cast<" << output_type
+          << ">(a); });" << std::endl;
+
+      ofs << "}" << std::endl;
+
+    } break;
+
+    default:
+      return kTfLiteError;
+  }
+
+  return kTfLiteOk;
+}
+#endif
+
 }  // namespace
 
 TFLMRegistration Register_CAST() {
+#ifdef TFLITE_MODEL_COMPILER
+  return tflite::micro::CompileOp(nullptr, CastPrepare, CastEval,
+                                   CastCompile);
+#else
   return tflite::micro::RegisterOp(nullptr, CastPrepare, CastEval);
+#endif
 }
 
 }  // namespace tflite
