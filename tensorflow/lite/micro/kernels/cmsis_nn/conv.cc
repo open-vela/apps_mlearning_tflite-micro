@@ -27,6 +27,7 @@ limitations under the License.
 #include "tensorflow/lite/kernels/padding.h"
 #include "tensorflow/lite/micro/kernels/kernel_util.h"
 #include "tensorflow/lite/micro/micro_log.h"
+#include "tensorflow/lite/micro/micro_utils.h"
 
 namespace tflite {
 namespace {
@@ -344,6 +345,122 @@ TfLiteStatus EvalInt8(TfLiteContext* context, TfLiteNode* node) {
       context, node, params, data, input, filter, bias, output);
 }
 
+#ifdef TFLITE_MODEL_COMPILER
+TfLiteStatus CompileInt8(TfLiteContext* context, TfLiteNode* node,
+                         TfLiteCompileStep step, std::ofstream& ofs) {
+  switch (step) {
+    case kTfLiteCompileStepInclude:
+      ofs << "#include \"arm_nnfunctions.h\"" << std::endl
+          << "#include \"tensorflow/lite/kernels/internal/reference/"
+          << "integer_ops/conv.h\""
+          << std::endl;
+      break;
+
+    case kTfLiteCompileStepEval: {
+      TFLITE_DCHECK(node->builtin_data != nullptr);
+      const auto& params =
+          *(reinterpret_cast<TfLiteConvParams*>(node->builtin_data));
+      TFLITE_DCHECK(node->user_data != nullptr);
+      const OpData* data = static_cast<const OpData*>(node->user_data);
+      MicroContext* micro_context = GetMicroContext(context);
+
+      const TfLiteEvalTensor* input =
+          tflite::micro::GetEvalInput(context, node, kConvInputTensor);
+      const TfLiteEvalTensor* filter =
+          tflite::micro::GetEvalInput(context, node, kConvWeightsTensor);
+      const TfLiteEvalTensor* bias =
+          tflite::micro::GetEvalInput(context, node, kConvBiasTensor);
+      TfLiteEvalTensor* output =
+          tflite::micro::GetEvalOutput(context, node, kConvOutputTensor);
+
+      ofs << "{ // conv int8" << std::endl;
+
+      // Tensor data.
+      tflite::micro::CompileArray(ofs, "const int8_t", "filter_data",
+                                  tflite::micro::GetTensorData<int8_t>(filter),
+                                  ElementCount(*filter->dims));
+      tflite::micro::CompileArray(ofs, "const int32_t", "bias_data",
+                                  tflite::micro::GetTensorData<int32_t>(bias),
+                                  ElementCount(*bias->dims));
+      tflite::micro::CompileAddress(ofs, "input_data", input->data.data);
+      tflite::micro::CompileAddress(ofs, "output_data", output->data.data);
+
+      // Conv parameters.
+      ofs << "static const cmsis_nn_conv_params conv_params = {.input_offset="
+          << -data->reference_op_data.input_zero_point
+          << ", .output_offset=" << data->reference_op_data.output_zero_point
+          << ", .stride={.w=" << params.stride_width
+          << ", .h=" << params.stride_height
+          << "}, .padding={.w=" << data->reference_op_data.padding.width
+          << ", .h=" << data->reference_op_data.padding.height
+          << "}, .dilation={.w=" << params.dilation_width_factor
+          << ", .h=" << params.dilation_height_factor << "}, .activation={.min="
+          << data->reference_op_data.output_activation_min
+          << ", .max=" << data->reference_op_data.output_activation_max << "}};"
+          << std::endl;
+
+      // Quant parameters.
+      const int num_channels = output->dims->data[3];
+      tflite::micro::CompileArray(
+          ofs, "int32_t", "multiplier",
+          data->reference_op_data.per_channel_output_multiplier, num_channels);
+      tflite::micro::CompileArray(
+          ofs, "int32_t", "shift",
+          data->reference_op_data.per_channel_output_shift, num_channels);
+
+      ofs << "static const cmsis_nn_per_channel_quant_params quant_params = "
+             "{.multiplier=multiplier, .shift=shift};"
+          << std::endl;
+
+      // Tensor demensions.
+      ofs << "static const cmsis_nn_dims input_dims = {.n="
+          << input->dims->data[0]
+          << ", .h=" << input->dims->data[1]
+          << ", .w=" << input->dims->data[2]
+          << ", .c=" << input->dims->data[3]
+          << "};" << std::endl;
+
+      ofs << "static const cmsis_nn_dims filter_dims = {.n=1"
+          << ", .h=" << filter->dims->data[1]
+          << ", .w=" << filter->dims->data[2]
+          << ", .c=" << filter->dims->data[3]
+          << "};" << std::endl;
+
+      ofs << "static const cmsis_nn_dims bias_dims = {.n=1, .h=1, .w=1, .c="
+          << bias->dims->data[0] << "};"
+          << std::endl;
+
+      ofs << "static const cmsis_nn_dims output_dims = {.n="
+          << output->dims->data[0]
+          << ", .h=" << output->dims->data[1]
+          << ", .w=" << output->dims->data[2]
+          << ", .c=" << output->dims->data[3]
+          << "};" << std::endl;
+
+      ofs << "static const cmsis_nn_context ctx = {.buf=";
+      tflite::micro::CompileAddress(
+          ofs, context->GetScratchBuffer(context, data->buffer_idx));
+      ofs << ",.size=0};" << std::endl;
+
+      ofs << "arm_convolve_wrapper_s8(&ctx, &conv_params, &quant_params, "
+             "&input_dims, reinterpret_cast<int8_t*>(input_data), "
+             "&filter_dims, reinterpret_cast<const int8_t*>(filter_data), "
+             "&bias_dims, reinterpret_cast<const int32_t*>(bias_data), "
+             "&output_dims, reinterpret_cast<int8_t*>(output_data));"
+          << std::endl;
+
+      ofs << "}" << std::endl;
+
+    } break;
+
+    default:
+      return kTfLiteError;
+  }
+
+  return kTfLiteOk;
+}
+#endif
+
 TfLiteStatus EvalInt16x8(TfLiteContext* context, TfLiteNode* node) {
   const TfLiteEvalTensor* input =
       tflite::micro::GetEvalInput(context, node, kConvInputTensor);
@@ -486,7 +603,11 @@ TFLMRegistration Register_CONV_2D_INT4() {
 }
 
 TFLMRegistration Register_CONV_2D_INT8() {
+#ifdef TFLITE_MODEL_COMPILER
+  return tflite::micro::CompileOp(Init, Prepare, EvalInt8, CompileInt8);
+#else
   return tflite::micro::RegisterOp(Init, Prepare, EvalInt8);
+#endif
 }
 
 TFLMRegistration Register_CONV_2D_INT16() {
