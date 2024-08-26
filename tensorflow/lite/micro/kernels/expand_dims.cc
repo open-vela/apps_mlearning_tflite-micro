@@ -140,10 +140,70 @@ TfLiteStatus ExpandDimsEval(TfLiteContext* context, TfLiteNode* node) {
   }
   return kTfLiteOk;
 }
+
+#ifdef TFLITE_MODEL_COMPILER
+TfLiteStatus ExpandDimsCompile(TfLiteContext* context, TfLiteNode* node,
+                               TfLiteCompileStep step, std::ofstream& ofs) {
+  switch (step) {
+    case kTfLiteCompileStepInclude:
+      ofs << "#include <cstring>" << std::endl;
+      break;
+
+    case kTfLiteCompileStepEval: {
+
+      const TfLiteEvalTensor* input =
+          tflite::micro::GetEvalInput(context, node, kInputTensor);
+      TfLiteEvalTensor* output =
+          tflite::micro::GetEvalOutput(context, node, kOutputTensor);
+      const int flat_size = ElementCount(*input->dims);
+
+      ofs << "{ // expand_dims" << std::endl;
+
+      tflite::micro::CompileAddress(ofs, "input_data", input->data.data);
+      tflite::micro::CompileAddress(ofs, "output_data", output->data.data);
+
+      ofs << "static int flat_size = " << flat_size << ";"<< std::endl;
+
+      switch (input->type) {
+        case kTfLiteFloat32: {
+          ofs << "memcpy(reinterpret_cast<float*>(output_data), "
+              << "reinterpret_cast<float*>(input_data), "
+              << "flat_size * sizeof(float));"
+              << std::endl;
+        } break;
+        case kTfLiteInt8: {
+          ofs << "memcpy(reinterpret_cast<int8_t*>(output_data), "
+              << "reinterpret_cast<int8_t*>(input_data), "
+              << "flat_size * sizeof(int8_t));"
+              << std::endl;
+        } break;
+        default:
+          ofs << "#error Expand_Dims only currently supports int8 and float32."
+              << std::endl;
+          return kTfLiteError;
+      }
+
+      ofs << "}" << std::endl;
+
+    } break;
+
+    default:
+      return kTfLiteError;
+  }
+
+  return kTfLiteOk;
+}
+#endif
+
 }  // namespace
 
 TFLMRegistration Register_EXPAND_DIMS() {
+#ifdef TFLITE_MODEL_COMPILER
+  return tflite::micro::CompileOp(nullptr, ExpandDimsPrepare, ExpandDimsEval,
+                                  ExpandDimsCompile);
+#else
   return tflite::micro::RegisterOp(nullptr, ExpandDimsPrepare, ExpandDimsEval);
+#endif
 }
 
 }  // namespace tflite
