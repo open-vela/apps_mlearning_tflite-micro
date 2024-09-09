@@ -21,7 +21,12 @@
 NEW_SRCS :=
 OLD_SRCS :=
 
-# beco
+ifneq ($(CONFIG_TFLITEMICRO_TOOL),)
+  # Enable all the third-party hardware operators.
+  COMMON_FLAGS += -DTFLITE_MODEL_COMPILER
+  CXXSRCS += $(TFLM_DIR)/tensorflow/lite/micro/kernels/beco/conv.cc
+else
+  # Substitute operators with hardware support sepectively.
 ifneq ($(CONFIG_BES_BECO_CONV),)
   COMMON_FLAGS += ${INCDIR_PREFIX}$(APPDIR)/vendor/bes/framework/services/include/beco
   COMMON_FLAGS += ${INCDIR_PREFIX}$(APPDIR)/vendor/bes/framework/services/include/beco/beco_nn
@@ -34,7 +39,4 @@ OLD_SRCS += $(addprefix $(TFLM_DIR)/tensorflow/lite/micro/kernels/, $(notdir $(N
 OLD_SRCS += $(addprefix $(TFLM_DIR)/tensorflow/lite/micro/kernels/cmsis_nn/, $(notdir $(NEW_SRCS)))
 CXXSRCS := $(filter-out $(OLD_SRCS), $(CXXSRCS))
 CXXSRCS += $(NEW_SRCS)
-
-ifneq ($(CONFIG_TFLITEMICRO_TOOL),)
-  COMMON_FLAGS += -DTFLITE_MODEL_COMPILER
 endif
