@@ -38,6 +38,6 @@ limitations under the License.
 
 extern "C" void DebugLog(const char* format, va_list args) {
 #ifndef TF_LITE_STRIP_ERROR_STRINGS
-  syslog(LOG_INFO, format, args);
+  vsyslog(LOG_INFO, format, args);
 #endif
 }
