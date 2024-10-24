@@ -28,7 +28,7 @@ namespace tflite {
 
 namespace {
 
-constexpr int kMaxInputNum = 10;  // Maximum number of input tensors
+constexpr int kMaxInputNum = 64;  // Maximum number of input tensors
 constexpr int kOutputTensor = 0;
 
 struct OpData {
