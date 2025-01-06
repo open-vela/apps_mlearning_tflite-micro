@@ -38,6 +38,7 @@ struct OpData {
   int filter_buffer_idx;
   int bias_buffer_idx;
   int io_buffer_idx;
+  int hw_buffer_idx;
   int padding;
 };
 
@@ -95,14 +96,40 @@ TfLiteStatus Prepare(TfLiteContext* context, TfLiteNode* node) {
       filter->dims->data[2], filter->dims->data[1], output->dims->data[2],
       output->dims->data[1], input->type, &data->reference_op_data));
 
+  cmsis_nn_conv_params conv_params;
+  conv_params.input_offset = -data->reference_op_data.input_zero_point;
+  conv_params.output_offset = data->reference_op_data.output_zero_point;
+  conv_params.stride.h = params.stride_height;
+  conv_params.stride.w = params.stride_width;
+  conv_params.padding.h = data->reference_op_data.padding.height;
+  conv_params.padding.w = data->reference_op_data.padding.width;
+  conv_params.dilation.h = params.dilation_height_factor;
+  conv_params.dilation.w = params.dilation_width_factor;
+  conv_params.activation.min = data->reference_op_data.output_activation_min;
+  conv_params.activation.max = data->reference_op_data.output_activation_max;
+
+  cmsis_nn_dims input_dims;
+  input_dims.n = input->dims->data[0];
+  input_dims.h = input->dims->data[1];
+  input_dims.w = input->dims->data[2];
+  input_dims.c = input->dims->data[3];
+
+  cmsis_nn_dims filter_dims;
+  filter_dims.n = filter->dims->data[0] + data->padding;
+  filter_dims.h = filter->dims->data[1];
+  filter_dims.w = filter->dims->data[2];
+  filter_dims.c = filter->dims->data[3];
+
+  cmsis_nn_dims output_dims;
+  output_dims.n = output->dims->data[0];
+  output_dims.h = output->dims->data[1];
+  output_dims.w = output->dims->data[2];
+  output_dims.c = output->dims->data[3] + data->padding;
+
   // Request convert scratch buffers.
   int input_size = ElementCount(*input->dims);
-  int output_size = output->dims->data[0] * output->dims->data[1] *
-                    output->dims->data[2] *
-                    (output->dims->data[3] + data->padding);
-  int filter_size = (filter->dims->data[0] + data->padding) *
-                    filter->dims->data[1] * filter->dims->data[2] *
-                    filter->dims->data[3];
+  int output_size = output_dims.n * output_dims.h * output_dims.w * output_dims.c;
+  int filter_size = filter_dims.n * filter_dims.h * filter_dims.w * filter_dims.c;
   int bias_size = (bias->dims->data[0] + data->padding) * sizeof(int32_t);
   TF_LITE_ENSURE_STATUS(micro_context->RequestScratchBufferInArena(
       tflite::Max(input_size, output_size), &data->io_buffer_idx));
@@ -110,6 +137,16 @@ TfLiteStatus Prepare(TfLiteContext* context, TfLiteNode* node) {
       filter_size, &data->filter_buffer_idx));
   TF_LITE_ENSURE_STATUS(micro_context->RequestScratchBufferInArena(
       bias_size, &data->bias_buffer_idx));
+
+  // hardware buffer
+  auto hw_buffer_size = beco_convolve_s8_get_buffer_size(
+      &input_dims, &output_dims, &conv_params, &filter_dims);
+  if (hw_buffer_size > 0) {
+    TF_LITE_ENSURE_STATUS(micro_context->RequestScratchBufferInArena(
+      hw_buffer_size, &data->hw_buffer_idx));
+  } else {
+    data->hw_buffer_idx = -1;
+  }
 
   micro_context->DeallocateTempTfLiteTensor(output);
   micro_context->DeallocateTempTfLiteTensor(input);
@@ -329,6 +366,13 @@ TfLiteStatus Eval(TfLiteContext* context, TfLiteNode* node) {
   output_dims.w = output->dims->data[2];
   output_dims.c = output->dims->data[3] + data->padding;
 
+  cmsis_nn_context ctx;
+  ctx.size = 0; // NOTE: not used in BECO
+  if (data->hw_buffer_idx > 0)
+    ctx.buf = micro_context->GetScratchBuffer(data->hw_buffer_idx);
+  else
+    ctx.buf = nullptr;
+
   // Convert tensors.
   auto io_buffer = reinterpret_cast<int8_t*>(
       micro_context->GetScratchBuffer(data->io_buffer_idx));
@@ -360,7 +404,7 @@ TfLiteStatus Eval(TfLiteContext* context, TfLiteNode* node) {
 
   // Do the real job.
   BECO_INIT();
-  beco_convolve_s8(NULL, &conv_params, &quant_params, &input_dims,
+  beco_convolve_s8(&ctx, &conv_params, &quant_params, &input_dims,
                    tflite::micro::GetTensorData<int8_t>(input), &filter_dims,
                    filter_buffer, &bias_dims, bias_buffer, &output_dims,
                    io_buffer);
