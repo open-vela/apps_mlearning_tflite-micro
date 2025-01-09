@@ -25,14 +25,23 @@ ifneq ($(CONFIG_TFLITEMICRO_TOOL),)
   # Enable all the third-party hardware operators.
   COMMON_FLAGS += -DTFLITE_MODEL_COMPILER
   CXXSRCS += $(TFLM_DIR)/tensorflow/lite/micro/kernels/beco/conv.cc
+  CXXSRCS += $(TFLM_DIR)/tensorflow/lite/micro/kernels/beco/fully_connected.cc
 else
   # Substitute operators with hardware support sepectively.
+ifneq ($(CONFIG_BES_BECO),)
+  COMMON_FLAGS += ${INCDIR_PREFIX}$(APPDIR)/vendor/bes/$(CONFIG_BES_DDK_DIR)/include/beco
+  COMMON_FLAGS += ${INCDIR_PREFIX}$(APPDIR)/vendor/bes/$(CONFIG_BES_DDK_DIR)/include/beco/beco_nn
+  COMMON_FLAGS += ${INCDIR_PREFIX}$(APPDIR)/vendor/bes/$(CONFIG_BES_DDK_DIR)/include/cmsis_dsp
+  COMMON_FLAGS += ${INCDIR_PREFIX}$(APPDIR)/vendor/bes/$(CONFIG_BES_DDK_DIR)/platform/cmsis/inc
+  COMMON_FLAGS += ${INCDIR_PREFIX}$(APPDIR)/vendor/bes/$(CONFIG_BES_DDK_DIR)/platform/hal
+endif
+
 ifneq ($(CONFIG_BES_BECO_CONV),)
-  COMMON_FLAGS += ${INCDIR_PREFIX}$(APPDIR)/vendor/bes/framework/services/include/beco
-  COMMON_FLAGS += ${INCDIR_PREFIX}$(APPDIR)/vendor/bes/framework/services/include/beco/beco_nn
-  COMMON_FLAGS += ${INCDIR_PREFIX}$(APPDIR)/vendor/bes/framework/services/include/cmsis_dsp
-  COMMON_FLAGS += ${INCDIR_PREFIX}$(APPDIR)/vendor/bes/framework/services/platform/cmsis/inc
   NEW_SRCS += $(TFLM_DIR)/tensorflow/lite/micro/kernels/beco/conv.cc
+endif
+
+ifneq ($(CONFIG_BES_BECO_FULLY_CONNECTED),)
+  NEW_SRCS += $(TFLM_DIR)/tensorflow/lite/micro/kernels/beco/fully_connected.cc
 endif
 
 OLD_SRCS += $(addprefix $(TFLM_DIR)/tensorflow/lite/micro/kernels/, $(notdir $(NEW_SRCS)))
