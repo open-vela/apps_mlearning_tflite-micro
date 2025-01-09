@@ -113,6 +113,11 @@ inline TFLMRegistration Register_FULLY_CONNECTED_INT4() {
   return Register_FULLY_CONNECTED();
 }
 
+#ifdef TFLITE_MODEL_COMPILER
+TFLMRegistration Register_BECO_FULLY_CONNECTED();
+TFLMRegistration Register_BECO_FULLY_CONNECTED_INT8();
+#endif
+
 #endif
 
 }  // namespace tflite
