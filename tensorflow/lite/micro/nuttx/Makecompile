@@ -38,9 +38,10 @@ ifneq ($(CONFIG_MLEARNING_CMSIS_NN),)
   CXXFLAGS += -I$(APPDIR)/mlearning/cmsis-nn/cmsis-nn
 endif
 
-ifneq ($(CONFIG_BES_BECO_CONV),)
-  CXXFLAGS += -I$(APPDIR)/vendor/bes/framework/services/include/beco
-  CXXFLAGS += -I$(APPDIR)/vendor/bes/framework/services/include/beco/beco_nn
-  CXXFLAGS += -I$(APPDIR)/vendor/bes/framework/services/include/cmsis_dsp
-  CXXFLAGS += -I$(APPDIR)/vendor/bes/framework/services/platform/cmsis/inc
+ifneq ($(CONFIG_BES_BECO),)
+  CXXFLAGS += -I$(APPDIR)/vendor/bes/$(CONFIG_BES_DDK_DIR)/include/beco
+  CXXFLAGS += -I$(APPDIR)/vendor/bes/$(CONFIG_BES_DDK_DIR)/include/beco/beco_nn
+  CXXFLAGS += -I$(APPDIR)/vendor/bes/$(CONFIG_BES_DDK_DIR)/include/cmsis_dsp
+  CXXFLAGS += -I$(APPDIR)/vendor/bes/$(CONFIG_BES_DDK_DIR)/platform/cmsis/inc
+  CXXFLAGS += -I$(APPDIR)/vendor/bes/$(CONFIG_BES_DDK_DIR)/platform/hal
 endif
