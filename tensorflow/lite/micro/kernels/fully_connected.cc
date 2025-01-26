@@ -22,6 +22,7 @@ limitations under the License.
 #include "tensorflow/lite/kernels/internal/reference/integer_ops/fully_connected.h"
 #include "tensorflow/lite/micro/kernels/kernel_util.h"
 #include "tensorflow/lite/micro/micro_log.h"
+#include "tensorflow/lite/micro/micro_utils.h"
 
 namespace tflite {
 namespace {
@@ -198,11 +199,114 @@ TfLiteStatus FullyConnectedEval(TfLiteContext* context, TfLiteNode* node) {
   return kTfLiteOk;
 }
 
+#ifdef TFLITE_MODEL_COMPILER
+TfLiteStatus FullyConnectedCompile(TfLiteContext* context, TfLiteNode* node,
+                                   TfLiteCompileStep step, std::ofstream& ofs) {
+  switch (step) {
+    case kTfLiteCompileStepInclude:
+      ofs << "#include \"tensorflow/lite/kernels/internal/reference/integer_ops/fully_connected.h\""
+          << std::endl
+          << "#include \"tensorflow/lite/kernels/internal/types.h\""
+          << std::endl;
+      break;
+
+    case kTfLiteCompileStepEval: {
+      TFLITE_DCHECK(node->builtin_data != nullptr);
+      const auto* params =
+          static_cast<const TfLiteFullyConnectedParams*>(node->builtin_data);
+
+      const TfLiteEvalTensor* input =
+          tflite::micro::GetEvalInput(context, node, kFullyConnectedInputTensor);
+      const TfLiteEvalTensor* filter =
+          tflite::micro::GetEvalInput(context, node, kFullyConnectedWeightsTensor);
+      const TfLiteEvalTensor* bias =
+          tflite::micro::GetEvalInput(context, node, kFullyConnectedBiasTensor);
+      TfLiteEvalTensor* output =
+          tflite::micro::GetEvalOutput(context, node, kFullyConnectedOutputTensor);
+
+      TFLITE_DCHECK(node->user_data != nullptr);
+
+      const auto& data =
+          *(static_cast<const OpDataFullyConnected*>(node->user_data));
+
+      ofs << "{ // fully_connected" << std::endl;
+
+      tflite::micro::CompileAddress(ofs, "input_data", input->data.data);
+      tflite::micro::CompileAddress(ofs, "output_data", output->data.data); 
+      tflite::micro::CompileArray(ofs, "const int8_t", "filter_data",
+          tflite::micro::GetTensorData<int8_t>(filter),
+          ElementCount(*filter->dims));
+      tflite::micro::CompileArray(ofs, "const int32_t", "bias_data",
+          tflite::micro::GetTensorData<int32_t>(bias),
+          ElementCount(*bias->dims));
+
+      tflite::micro::CompileArray(ofs, "const int32_t", "input_dims_data",
+          input->dims->data, input->dims->size);
+      tflite::micro::CompileArray(ofs, "const int32_t", "filter_dims_data",
+          filter->dims->data, filter->dims->size);
+      tflite::micro::CompileArray(ofs, "const int32_t", "bias_dims_data",
+          bias->dims->data, bias->dims->size);
+      tflite::micro::CompileArray(ofs, "const int32_t", "output_dims_data",
+          output->dims->data, output->dims->size);
+
+      ofs << "tflite::FullyConnectedParams params;"
+          << "params.input_offset=" << -data.input_zero_point << ";"
+          << "params.weights_offset=" << -data.filter_zero_point << ";"
+          << "params.output_offset=" << data.output_zero_point << ";"
+          << "params.output_multiplier=" << data.output_multiplier << ";"
+          << "params.output_shift=" << data.output_shift << ";"
+          << "params.quantized_activation_min=" << data.output_activation_min << ";"
+          << "params.quantized_activation_max=" << data.output_activation_max << ";"
+          << std::endl;
+
+      switch (input->type) {
+        case kTfLiteInt8:
+          switch (filter->type) {
+            case kTfLiteInt8:
+              ofs << "tflite::reference_integer_ops::FullyConnected(params,"
+                  << "tflite::RuntimeShape("<< input->dims->size << ",input_dims_data),"
+                  << "(int8_t*)input_data,"
+                  << "tflite::RuntimeShape("<< filter->dims->size << ",filter_dims_data),"
+                  << "filter_data,"
+                  << "tflite::RuntimeShape("<< bias->dims->size << ",bias_dims_data),"
+                  << "bias_data,"
+                  << "tflite::RuntimeShape("<< output->dims->size << ",output_dims_data),"
+                  << "(int8_t*)output_data);"
+                  << std::endl;
+              break;
+            default:
+              ofs << "Filter type " << TfLiteTypeGetName(filter->type)
+                  << " not supported." << std::endl;
+              return kTfLiteError;
+          }
+          break;
+
+        default:
+          ofs << "Input type " << TfLiteTypeGetName(input->type)
+              << " not supported." << std::endl;
+          return kTfLiteError;
+      }
+
+      ofs << "}" << std::endl;
+    } break;
+
+    default:
+      return kTfLiteError;
+  }
+
+  return kTfLiteOk;
+}
+#endif // TFLITE_MODEL_COMPILER
 }  // namespace
 
 TFLMRegistration Register_FULLY_CONNECTED() {
+#ifdef TFLITE_MODEL_COMPILER
+  return tflite::micro::CompileOp(FullyConnectedInit, FullyConnectedPrepare,
+                                  FullyConnectedEval, FullyConnectedCompile);
+#else
   return tflite::micro::RegisterOp(FullyConnectedInit, FullyConnectedPrepare,
                                    FullyConnectedEval);
+#endif
 }
 
 TFLMInferenceRegistration RegisterInference_FULLY_CONNECTED() {
