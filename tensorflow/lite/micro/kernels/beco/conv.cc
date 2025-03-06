@@ -13,9 +13,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
-#ifndef TFLITE_MODEL_COMPILER
 #include "beco_nnfunctions.h"
-#endif
 
 #include "tensorflow/lite/c/builtin_op_data.h"
 #include "tensorflow/lite/c/common.h"
@@ -138,7 +136,7 @@ TfLiteStatus Prepare(TfLiteContext* context, TfLiteNode* node) {
   TF_LITE_ENSURE_STATUS(micro_context->RequestScratchBufferInArena(
       bias_size, &data->bias_buffer_idx));
 
-  // hardware buffer
+  // hardware buffer, TODO: remove hardware related code during prepare
   auto hw_buffer_size = beco_convolve_s8_get_buffer_size(
       &input_dims, &output_dims, &conv_params, &filter_dims);
   if (hw_buffer_size > 0) {
@@ -246,6 +244,14 @@ TfLiteStatus Compile(TfLiteContext* context, TfLiteNode* node,
           << ", .c=" << output->dims->data[3] + data->padding << "};"
           << std::endl;
 
+      ofs << "cmsis_nn_context ctx; ctx.size = 0; ctx.buf = ";
+      if (data->hw_buffer_idx > 0) {
+        ofs << "(void*)" << micro_context->GetScratchBuffer(data->hw_buffer_idx);
+      } else {
+        ofs << "nullptr";
+      }
+      ofs << ";" << std::endl;
+
       // Computations.
       tflite::micro::CompileAddress(
           ofs, "io_buffer",
@@ -282,7 +288,7 @@ TfLiteStatus Compile(TfLiteContext* context, TfLiteNode* node,
       }
 
       ofs << "BECO_INIT();" << std::endl
-          << "beco_convolve_s8(nullptr, &conv_params, &quant_params, "
+          << "beco_convolve_s8(&ctx, &conv_params, &quant_params, "
              "&input_dims, reinterpret_cast<int8_t*>(input_data), "
              "&filter_dims, reinterpret_cast<int8_t*>(filter_buffer), "
              "&bias_dims, reinterpret_cast<int32_t*>(bias_buffer), "
@@ -305,7 +311,8 @@ TfLiteStatus Compile(TfLiteContext* context, TfLiteNode* node,
 
   return kTfLiteOk;
 }
-#else
+#endif
+
 TfLiteStatus Eval(TfLiteContext* context, TfLiteNode* node) {
   TFLITE_DCHECK(node->builtin_data != nullptr);
   const auto& params =
@@ -416,7 +423,6 @@ TfLiteStatus Eval(TfLiteContext* context, TfLiteNode* node) {
 
   return kTfLiteOk;
 }
-#endif
 
 }  // namespace
 
@@ -424,7 +430,7 @@ TfLiteStatus Eval(TfLiteContext* context, TfLiteNode* node) {
 TFLMRegistration Register_BECO_CONV_2D() { return Register_BECO_CONV_2D_INT8(); }
 
 TFLMRegistration Register_BECO_CONV_2D_INT8() {
-  return tflite::micro::CompileOp(Init, Prepare, nullptr, Compile);
+  return tflite::micro::CompileOp(Init, Prepare, Eval, Compile);
 }
 #else
 TFLMRegistration Register_CONV_2D() { return Register_CONV_2D_INT8(); }

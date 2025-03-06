@@ -84,11 +84,10 @@ TfLiteStatus ShapeCompile(TfLiteContext* context, TfLiteNode* node,
         ofs << "const int32_t input_dims_size = " << input->dims->size
             << ";" << std::endl;
 
-        int32_t *input_dims_data = const_cast<int32_t*>(input->dims->data);
+        auto* input_dims_data = const_cast<int*>(input->dims->data);
 
         tflite::micro::CompileArray(ofs, "int32_t", "input_dims",
-                                    input_dims_data,
-                                    input->dims->size);
+                                    input_dims_data, input->dims->size);
 
         ofs << "memcpy(reinterpret_cast<int32_t*>(output_data),"
             << "&input_dims, input_dims_size * sizeof(int32_t));" << std::endl;
