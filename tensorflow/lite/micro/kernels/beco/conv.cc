@@ -244,9 +244,15 @@ TfLiteStatus Compile(TfLiteContext* context, TfLiteNode* node,
           << ", .c=" << output->dims->data[3] + data->padding << "};"
           << std::endl;
 
+      if (data->hw_buffer_idx > 0) {
+        tflite::micro::CompileAddress(
+            ofs, "hw_buffer",
+            micro_context->GetScratchBuffer(data->hw_buffer_idx));
+        }
+
       ofs << "cmsis_nn_context ctx; ctx.size = 0; ctx.buf = ";
       if (data->hw_buffer_idx > 0) {
-        ofs << "(void*)" << micro_context->GetScratchBuffer(data->hw_buffer_idx);
+        ofs << "hw_buffer";
       } else {
         ofs << "nullptr";
       }
