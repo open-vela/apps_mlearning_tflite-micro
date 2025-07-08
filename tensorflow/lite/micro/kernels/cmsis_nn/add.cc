@@ -402,7 +402,7 @@ TfLiteStatus CompileAddInt8(TfLiteContext* context, TfLiteNode* node,
       TFLITE_DCHECK(output->type == kTfLiteInt8);
       const OpData* data = static_cast<const OpData*>(node->user_data);
 
-      tflite::ArithmeticParams op_params;
+      tflite::ArithmeticParams op_params = {};
       UpdateOpParams(&op_params, data);
 
       bool need_broadcast = reference_ops::ProcessBroadcastShapes(
