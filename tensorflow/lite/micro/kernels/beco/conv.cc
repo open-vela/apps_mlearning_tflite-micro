@@ -426,15 +426,13 @@ TfLiteStatus Eval(TfLiteContext* context, TfLiteNode* node) {
 
 }  // namespace
 
-#ifdef TFLITE_MODEL_COMPILER
-TFLMRegistration Register_BECO_CONV_2D() { return Register_BECO_CONV_2D_INT8(); }
+TFLMRegistration Register_CONV_2D() { return Register_CONV_2D_INT8(); }
 
-TFLMRegistration Register_BECO_CONV_2D_INT8() {
+#ifdef TFLITE_MODEL_COMPILER
+TFLMRegistration Register_CONV_2D_INT8() {
   return tflite::micro::CompileOp(Init, Prepare, Eval, Compile);
 }
 #else
-TFLMRegistration Register_CONV_2D() { return Register_CONV_2D_INT8(); }
-
 TFLMRegistration Register_CONV_2D_INT8() {
   return tflite::micro::RegisterOp(Init, Prepare, Eval);
 }
