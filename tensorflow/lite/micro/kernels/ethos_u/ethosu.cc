@@ -13,7 +13,10 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
-#include <ethosu_driver.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <sys/ioctl.h>
+#include <nuttx/aie/ethosu_aie.h>
 
 #include "flatbuffers/flexbuffers.h"
 #include "tensorflow/lite/c/common.h"
@@ -148,17 +151,31 @@ TfLiteStatus Eval(TfLiteContext* context, TfLiteNode* node) {
   // the input and output tensors outside of the TFLM arena.
   num_tensors = std::min(num_tensors, 8);
 
-  struct ethosu_driver* drv = ethosu_reserve_driver();
-  result = ethosu_invoke_v3(drv, cms_data, data->cms_data_size, base_addrs,
-                            base_addrs_size, num_tensors,
-                            GetMicroContext(context)->external_context());
-  ethosu_release_driver(drv);
-
-  if (-1 == result) {
+  // Open the AIE device
+  int aie_fd = open("/dev/aie0", O_RDWR);
+  if (aie_fd < 0) {
+    MicroPrintf("ERROR: Failed to open /dev/aie0");
     return kTfLiteError;
-  } else {
-    return kTfLiteOk;
   }
+
+  struct ethosu_aie_invoke_params params;
+  params.custom_data_ptr = cms_data;
+  params.custom_data_size = data->cms_data_size;
+  params.base_addr = base_addrs;
+  params.base_addr_size = base_addrs_size;
+  params.num_base_addr = num_tensors;
+
+  result = ioctl(aie_fd, AIE_CMD_GET_OUTPUT,
+                 (unsigned long)(uintptr_t)&params);
+  if (result < 0) {
+    MicroPrintf("ERROR: Ethos-U invoke failed");
+    close(aie_fd);
+    return kTfLiteError;
+  }
+
+  close(aie_fd);
+
+  return kTfLiteOk;
 }
 
 }  // namespace
