@@ -31,6 +31,89 @@ namespace tflite {
 const int kMaxNumberOfAxis = 5;
 const int kMaxNumberOfReducedAxis = 2;
 
+namespace {
+
+enum MinMaxEvalType { kEvalMin, kEvalMax };
+
+template <typename T>
+struct MinMaxReducerCompare {
+  MinMaxReducerCompare() = delete;
+  MinMaxReducerCompare(MinMaxEvalType evalType) : type_(evalType) {};
+
+  constexpr T initialValue() const {
+    return (type_ == kEvalMin) ? std::numeric_limits<T>::max()
+                               : std::numeric_limits<T>::lowest();
+  }
+
+  // should be able to use "auto" keyword here, but GCC and Clang blow a fuse
+  T (*compare())(const T, const T) {
+    if (type_ == kEvalMin) {
+      return [](const T current, const T in) -> T {
+        return (in < current) ? in : current;
+      };
+    } else {
+      return [](const T current, const T in) -> T {
+        return (in > current) ? in : current;
+      };
+    }
+  }
+
+ private:
+  MinMaxEvalType type_;
+};
+
+TfLiteStatus EvalMinMaxHelper(TfLiteContext* context, TfLiteNode* node,
+                              OpDataReduce* op_data, MinMaxEvalType evalType) {
+  const TfLiteEvalTensor* input = tflite::micro::GetEvalInput(context, node, 0);
+  const TfLiteEvalTensor* axis = tflite::micro::GetEvalInput(context, node, 1);
+  TfLiteEvalTensor* output = tflite::micro::GetEvalOutput(context, node, 0);
+  TF_LITE_ENSURE_TYPES_EQ(context, input->type, output->type);
+  TfLiteReducerParams* params =
+      static_cast<TfLiteReducerParams*>(node->builtin_data);
+
+  // Interpret an axis tensor with null dimensions as a scalar
+  int num_axis = static_cast<int>(ElementCount(*axis->dims));
+  int* temp_buffer = static_cast<int*>(
+      context->GetScratchBuffer(context, op_data->temp_buffer_idx));
+  int* resolved_axis = static_cast<int*>(
+      context->GetScratchBuffer(context, op_data->resolved_axis_idx));
+  switch (input->type) {
+    case kTfLiteFloat32: {
+      MinMaxReducerCompare<float> reducer(evalType);
+      TF_LITE_ENSURE(
+          context,
+          reference_ops::ReduceGeneric<float>(
+              tflite::micro::GetTensorData<float>(input), input->dims->data,
+              input->dims->size, tflite::micro::GetTensorData<float>(output),
+              output->dims->data, output->dims->size,
+              tflite::micro::GetTensorData<int>(axis), num_axis,
+              params->keep_dims, temp_buffer, resolved_axis,
+              reducer.initialValue(), reducer.compare()));
+    } break;
+    case kTfLiteInt8: {
+      MinMaxReducerCompare<int8_t> reducer(evalType);
+      TF_LITE_ENSURE_EQ(context, static_cast<double>(op_data->input_scale),
+                        static_cast<double>(op_data->output_scale));
+      TF_LITE_ENSURE_EQ(context, op_data->input_zp, op_data->output_zp);
+      TF_LITE_ENSURE(
+          context,
+          reference_ops::ReduceGeneric<int8_t>(
+              tflite::micro::GetTensorData<int8_t>(input), input->dims->data,
+              input->dims->size, tflite::micro::GetTensorData<int8_t>(output),
+              output->dims->data, output->dims->size,
+              tflite::micro::GetTensorData<int>(axis), num_axis,
+              params->keep_dims, temp_buffer, resolved_axis,
+              reducer.initialValue(), reducer.compare()));
+    } break;
+    default:
+      MicroPrintf("Only float32 and int8 types are supported.");
+      return kTfLiteError;
+  }
+  return kTfLiteOk;
+}
+
+}  // namespace
+
 TfLiteStatus PrepareSimple(TfLiteContext* context, TfLiteNode* node,
                            int32_t* multiplier, int* shift) {
   MicroContext* micro_context = GetMicroContext(context);
@@ -61,6 +144,34 @@ TfLiteStatus PrepareSimple(TfLiteContext* context, TfLiteNode* node,
   }
   micro_context->DeallocateTempTfLiteTensor(axis);
   micro_context->DeallocateTempTfLiteTensor(input);
+  return kTfLiteOk;
+}
+
+TfLiteStatus PrepareMinMaxHelper(TfLiteContext* context, TfLiteNode* node,
+                                 OpDataReduce* op_data) {
+  TF_LITE_ENSURE_OK(context, PrepareSimple(context, node, &op_data->multiplier,
+                                           &op_data->shift));
+
+  MicroContext* micro_context = GetMicroContext(context);
+  TfLiteTensor* input = micro_context->AllocateTempInputTensor(node, 0);
+  TfLiteTensor* output = micro_context->AllocateTempOutputTensor(node, 0);
+  TfLiteTensor* axis = micro_context->AllocateTempInputTensor(node, 1);
+
+  op_data->input_zp = input->params.zero_point;
+  op_data->input_scale = input->params.scale;
+  op_data->output_zp = output->params.zero_point;
+  op_data->output_scale = output->params.scale;
+  op_data->num_output_elements = NumElements(output);
+
+  context->RequestScratchBufferInArena(context, sizeof(int) * input->dims->size,
+                                       &op_data->temp_buffer_idx);
+  context->RequestScratchBufferInArena(
+      context, sizeof(int) * static_cast<int>(ElementCount(*axis->dims)),
+      &op_data->resolved_axis_idx);
+
+  micro_context->DeallocateTempTfLiteTensor(input);
+  micro_context->DeallocateTempTfLiteTensor(output);
+  micro_context->DeallocateTempTfLiteTensor(axis);
   return kTfLiteOk;
 }
 
@@ -304,6 +415,11 @@ TfLiteStatus EvalMaxHelper(TfLiteContext* context, TfLiteNode* node,
       return kTfLiteError;
   }
   return kTfLiteOk;
+}
+
+TfLiteStatus EvalMinHelper(TfLiteContext* context, TfLiteNode* node,
+                           OpDataReduce* op_data) {
+  return EvalMinMaxHelper(context, node, op_data, kEvalMin);
 }
 
 TfLiteStatus EvalSumHelper(TfLiteContext* context, TfLiteNode* node,

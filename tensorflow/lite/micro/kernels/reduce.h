@@ -40,6 +40,9 @@ struct OpDataReduce {
   int num_axis;
 };
 
+TfLiteStatus PrepareMinMaxHelper(TfLiteContext* context, TfLiteNode* node,
+                                 OpDataReduce* op_data);
+
 TfLiteStatus PrepareMaxHelper(TfLiteContext* context, TfLiteNode* node,
                               OpDataReduce* op_data);
 
@@ -47,6 +50,8 @@ TfLiteStatus PrepareMeanOrSumHelper(TfLiteContext* context, TfLiteNode* node,
                                     OpDataReduce* op_data);
 
 TfLiteStatus EvalMaxHelper(TfLiteContext* context, TfLiteNode* node,
+                           OpDataReduce* op_data);
+TfLiteStatus EvalMinHelper(TfLiteContext* context, TfLiteNode* node,
                            OpDataReduce* op_data);
 TfLiteStatus EvalMeanHelper(TfLiteContext* context, TfLiteNode* node,
                             OpDataReduce* op_data);
