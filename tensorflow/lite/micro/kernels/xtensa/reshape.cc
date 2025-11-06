@@ -91,11 +91,61 @@ TfLiteStatus Eval(TfLiteContext* context, TfLiteNode* node) {
 
 }  // namespace
 
+#ifdef TFLITE_MODEL_COMPILER
+TfLiteStatus ReshapeCompile(TfLiteContext* context, TfLiteNode* node,
+                            TfLiteCompileStep step, std::ofstream& ofs) {
+  switch (step) {
+    case kTfLiteCompileStepInclude:
+      break;
+
+    case kTfLiteCompileStepEval: {
+      const TfLiteEvalTensor* input =
+          tflite::micro::GetEvalInput(context, node, kReshapeInputTensor);
+      TfLiteEvalTensor* output =
+          tflite::micro::GetEvalOutput(context, node, kReshapeOutputTensor);
+
+      // Calculate input size in bytes
+      size_t input_bytes;
+      TF_LITE_ENSURE_STATUS(TfLiteTypeSizeOf(input->type, &input_bytes));
+      input_bytes *= ElementCount(*input->dims);
+
+      ofs << "{ // reshape operation" << std::endl;
+
+      // Only perform copy if input and output are not the same buffer (not in-place)
+      if (input->data.raw != output->data.raw) {
+        // Generate address compilation for input and output data
+        tflite::micro::CompileAddress(ofs, "input_data", input->data.raw);
+        tflite::micro::CompileAddress(ofs, "output_data", output->data.raw);
+
+        // Generate the memcpy operation
+        ofs << "memcpy(output_data, input_data, " << input_bytes << ");"
+            << std::endl;
+      } else {
+        // In-place reshape, no copy needed
+        ofs << "// In-place reshape, no data copy required" << std::endl;
+      }
+
+      ofs << "}" << std::endl;
+      break;
+    }
+
+    default:
+      return kTfLiteError;
+  }
+
+  return kTfLiteOk;
+}
+#endif  // TFLITE_MODEL_COMPILER
+
 TFLMRegistration Register_RESHAPE() {
 #if defined(VISION_P6)
   return tflite::micro::RegisterOp(Init, Prepare, Eval);
 #else
-  return tflite::micro::RegisterOp(nullptr, Prepare, Eval);
+  #ifdef TFLITE_MODEL_COMPILER
+    return tflite::micro::CompileOp(nullptr, Prepare, Eval, ReshapeCompile);
+  #else
+    return tflite::micro::RegisterOp(nullptr, Prepare, Eval);
+  #endif
 #endif
 }
 
