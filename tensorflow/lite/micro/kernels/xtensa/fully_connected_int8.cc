@@ -24,6 +24,7 @@ limitations under the License.
 #include "tensorflow/lite/micro/kernels/kernel_util.h"
 #include "tensorflow/lite/micro/kernels/xtensa/xtensa.h"
 #include "tensorflow/lite/micro/kernels/xtensa/xtensa_fully_connected.h"
+#include "tensorflow/lite/micro/micro_utils.h"
 
 namespace tflite {
 
@@ -157,9 +158,148 @@ TfLiteStatus EvalInt8(TfLiteContext* context, TfLiteNode* node) {
 
 }  // namespace
 
+#ifdef TFLITE_MODEL_COMPILER
+TfLiteStatus FullyConnectedCompile(TfLiteContext* context, TfLiteNode* node,
+                                   TfLiteCompileStep step, std::ofstream& ofs) {
+  switch (step) {
+    case kTfLiteCompileStepInclude:
+      ofs << "#include \"tensorflow/lite/micro/kernels/xtensa/xtensa.h\""
+          << std::endl
+          << "#include \"tensorflow/lite/micro/kernels/fully_connected.h\""
+          << std::endl;
+      break;
+
+    case kTfLiteCompileStepEval: {
+      TFLITE_DCHECK(node->user_data != nullptr);
+      const OpDataFullyConnected* data =
+          static_cast<const OpDataFullyConnected*>(node->user_data);
+
+      const TfLiteEvalTensor* input =
+          tflite::micro::GetEvalInput(context, node, kFullyConnectedInputTensor);
+      const TfLiteEvalTensor* filter =
+          tflite::micro::GetEvalInput(context, node, kFullyConnectedWeightsTensor);
+      const TfLiteEvalTensor* bias =
+          tflite::micro::GetEvalInput(context, node, kFullyConnectedBiasTensor);
+      TfLiteEvalTensor* output =
+          tflite::micro::GetEvalOutput(context, node, kFullyConnectedOutputTensor);
+
+      // Only support Int8 quantized inference
+      if (input->type != kTfLiteInt8) {
+        ofs << "// Input type " << TfLiteTypeGetName(input->type)
+            << " not supported for Xtensa compilation" << std::endl;
+        return kTfLiteError;
+      }
+
+      ofs << "{ // xtensa fully connected int8" << std::endl;
+
+      // 1. Generate constant data arrays
+      tflite::micro::CompileArray(ofs, "const int8_t", "filter_data",
+                                  tflite::micro::GetTensorData<int8_t>(filter),
+                                  ElementCount(*filter->dims));
+      tflite::micro::CompileArray(ofs, "const int32_t", "bias_data",
+                                  tflite::micro::GetTensorData<int32_t>(bias),
+                                  ElementCount(*bias->dims));
+
+      // 2. Generate runtime data addresses
+      tflite::micro::CompileAddress(ofs, "input_data",
+                                    tflite::micro::GetTensorData<int8_t>(input));
+      tflite::micro::CompileAddress(ofs, "output_data",
+                                    tflite::micro::GetTensorData<int8_t>(output));
+
+      // 3. Generate dimension variables
+      const RuntimeShape& output_shape = tflite::micro::GetTensorShape(output);
+      const int num_batches =
+          FlatSizeSkipDim(output_shape, output_shape.DimensionsCount() - 1);
+      const int output_depth =
+          output_shape.Dims(output_shape.DimensionsCount() - 1);
+
+      const RuntimeShape& filter_shape = tflite::micro::GetTensorShape(filter);
+      const int filter_dim_count = filter_shape.DimensionsCount();
+      const int accum_depth = filter_shape.Dims(filter_dim_count - 1);
+
+      ofs << "const int num_batches = " << num_batches << ";" << std::endl
+          << "const int output_depth = " << output_depth << ";" << std::endl
+          << "const int accum_depth = " << accum_depth << ";" << std::endl;
+
+      // 4. Generate quantization parameters
+      const int32_t input_offset = -data->input_zero_point;
+      const int32_t output_multiplier = data->output_multiplier;
+      const int32_t output_shift = data->output_shift;
+      const int32_t output_offset = data->output_zero_point;
+      const int32_t activation_min = data->output_activation_min;
+      const int32_t activation_max = data->output_activation_max;
+
+      ofs << "const int32_t input_offset = " << input_offset << ";" << std::endl
+          << "const int32_t output_multiplier = " << output_multiplier << ";"
+          << std::endl
+          << "const int32_t output_shift = " << output_shift << ";" << std::endl
+          << "const int32_t output_offset = " << output_offset << ";" << std::endl
+          << "const int32_t activation_min = " << activation_min << ";"
+          << std::endl
+          << "const int32_t activation_max = " << activation_max << ";"
+          << std::endl;
+
+      // 5. Generate fully connected execution code
+      ofs << "// Fully connected computation" << std::endl
+          << "for (int batch = 0; batch < num_batches; ++batch) {" << std::endl
+          << "  int8_t* p_out_temp = &((int8_t*)output_data)[batch * "
+             "output_depth];"
+          << std::endl
+          << "  const int8_t* p_inp_temp = &((const int8_t*)input_data)[batch "
+             "* accum_depth];"
+          << std::endl
+          << std::endl
+          << "  int err = xa_nn_fully_connected_sym8sxasym8s_asym8s(" << std::endl
+          << "      p_out_temp," << std::endl
+          << "      const_cast<int8_t*>(filter_data)," << std::endl
+          << "      const_cast<int8_t*>(p_inp_temp)," << std::endl
+          << "      const_cast<int32_t*>(bias_data)," << std::endl
+          << "      accum_depth, output_depth," << std::endl
+          << "      input_offset," << std::endl
+          << "      output_multiplier, output_shift, output_offset);"
+          << std::endl
+          << "  if (err != 0) {" << std::endl
+          << "    printf(\"ERROR: xa_nn_fully_connected_sym8sxasym8s_asym8s failed with code %d\\\\n\", err);" << std::endl
+          << "  }" << std::endl
+          << "  printf(\"FC output before activation: \");" << std::endl
+          << "  for (int i = 0; i < output_depth; i++) {" << std::endl
+          << "    printf(\"%d \", p_out_temp[i]);" << std::endl
+          << "  }" << std::endl
+          << "  printf(\"\\\\n\");" << std::endl
+          << "}" << std::endl
+          << std::endl;
+
+      // 6. Generate activation function
+      ofs << "// Apply activation function" << std::endl
+          << "const int out_length = num_batches * output_depth;" << std::endl
+          << "int err = xa_nn_vec_activation_min_max_8_8(" << std::endl
+          << "    (int8_t*)output_data, (int8_t*)output_data," << std::endl
+          << "    activation_min, activation_max, out_length);" << std::endl
+          << "if (err != 0) {" << std::endl
+          << "  printf(\"ERROR: xa_nn_vec_activation_min_max_8_8 failed with code %d\\\\n\", err);" << std::endl
+          << "}" << std::endl;
+
+      ofs << "}" << std::endl;
+
+    } break;
+
+    default:
+      return kTfLiteError;
+  }
+
+  return kTfLiteOk;
+}
+#endif  // TFLITE_MODEL_COMPILER
+
 TFLMRegistration Register_FULLY_CONNECTED_INT8() {
+#ifdef TFLITE_MODEL_COMPILER
+  return tflite::micro::CompileOp(XtensaInitFullyConnected,
+                                  XtensaPrepareFullyConnected, EvalInt8,
+                                  FullyConnectedCompile);
+#else
   return tflite::micro::RegisterOp(XtensaInitFullyConnected,
                                    XtensaPrepareFullyConnected, EvalInt8);
+#endif
 }
 
 }  // namespace tflite
