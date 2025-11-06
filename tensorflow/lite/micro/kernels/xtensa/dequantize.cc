@@ -110,9 +110,98 @@ TfLiteStatus DequantizeEval(TfLiteContext* context, TfLiteNode* node) {
   return kTfLiteOk;
 }
 
+#ifdef TFLITE_MODEL_COMPILER
+TfLiteStatus DequantizeCompile(TfLiteContext* context, TfLiteNode* node,
+                               TfLiteCompileStep step, std::ofstream& ofs) {
+  switch (step) {
+    case kTfLiteCompileStepInclude:
+      ofs << "#include \"tensorflow/lite/micro/kernels/xtensa/xtensa.h\""
+          << std::endl
+          << "#include \"tensorflow/lite/micro/kernels/dequantize.h\""
+          << std::endl
+          << "#include \"tensorflow/lite/kernels/internal/reference/dequantize.h\""
+          << std::endl;
+      break;
+
+    case kTfLiteCompileStepEval: {
+      TFLITE_DCHECK(node->user_data != nullptr);
+      const DequantizeOpData* data =
+          static_cast<const DequantizeOpData*>(node->user_data);
+
+      const TfLiteEvalTensor* input =
+          tflite::micro::GetEvalInput(context, node, 0);
+      TfLiteEvalTensor* output =
+          tflite::micro::GetEvalOutput(context, node, 0);
+
+      // Only support quantized input types to Float32 output
+      if (output->type != kTfLiteFloat32) {
+        ofs << "// Output type " << TfLiteTypeGetName(output->type)
+            << " not supported for Xtensa compilation" << std::endl;
+        return kTfLiteError;
+      }
+
+      ofs << "{ // xtensa dequantize" << std::endl;
+
+      // 1. Generate runtime data addresses
+      tflite::micro::CompileAddress(ofs, "input_data", input->data.data);
+      tflite::micro::CompileAddress(ofs, "output_data", output->data.data);
+
+      // 2. Generate dequantization parameters
+      const int32_t inp_zero_point = data->quantization_params.zero_point;
+      const float inp_scale = data->quantization_params.scale;
+
+      ofs << "const int32_t inp_zero_point = " << inp_zero_point << ";"
+          << std::endl
+          << "const float inp_scale = " << inp_scale << "f;" << std::endl;
+
+      // 3. Generate flat size
+      const RuntimeShape& input_shape = tflite::micro::GetTensorShape(input);
+      const RuntimeShape& output_shape = tflite::micro::GetTensorShape(output);
+      const int flat_size = MatchingFlatSize(input_shape, output_shape);
+
+      ofs << "const int flat_size = " << flat_size << ";" << std::endl
+          << std::endl;
+
+      // 4. Generate dequantization code for int8 only (HIFI4 VFPU optimized)
+      // Only support int8 to float32 dequantization for HIFI4
+      if (input->type != kTfLiteInt8) {
+        ofs << "// Unsupported input type: " << TfLiteTypeGetName(input->type)
+            << " (only int8 supported)" << std::endl;
+        return kTfLiteError;
+      }
+
+      // Generate direct call to HIFI4 VFPU nnlib function (no conditional compilation)
+      ofs << "// Int8 to Float32 dequantization" << std::endl
+          << "xa_nn_elm_dequantize_asym8s_f32(" << std::endl
+          << "    reinterpret_cast<float*>(output_data)," << std::endl
+          << "    reinterpret_cast<const int8_t*>(input_data)," << std::endl
+          << "    inp_zero_point, inp_scale, flat_size);" << std::endl;
+
+      ofs << "}" << std::endl;
+
+    } break;
+
+    default:
+      return kTfLiteError;
+  }
+
+  return kTfLiteOk;
+}
+#endif  // TFLITE_MODEL_COMPILER
+
 TFLMRegistration Register_DEQUANTIZE() {
+#ifdef TFLITE_MODEL_COMPILER
+  return tflite::micro::CompileOp(DequantizeInit, DequantizePrepare,
+                                  DequantizeEval, DequantizeCompile);
+#else
   return tflite::micro::RegisterOp(DequantizeInit, DequantizePrepare,
                                    DequantizeEval);
+#endif
+}
+
+// Type-specific registration function for INT8 dequantization
+TFLMRegistration Register_DEQUANTIZE_INT8() {
+  return Register_DEQUANTIZE();
 }
 
 }  // namespace tflite
