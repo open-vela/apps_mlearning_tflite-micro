@@ -118,9 +118,117 @@ TfLiteStatus Eval(TfLiteContext* context, TfLiteNode* node) {
 
 }  // namespace
 
+#ifdef TFLITE_MODEL_COMPILER
+TfLiteStatus SoftmaxCompile(TfLiteContext* context, TfLiteNode* node,
+                            TfLiteCompileStep step, std::ofstream& ofs) {
+  switch (step) {
+    case kTfLiteCompileStepInclude:
+      // Include necessary headers for HIFI4 implementation
+      ofs << "#include \"tensorflow/lite/micro/kernels/xtensa/xtensa.h\""
+          << std::endl
+          << "#include \"tensorflow/lite/micro/kernels/xtensa/xtensa_softmax.h\""
+          << std::endl
+          << "#include \"tensorflow/lite/kernels/internal/common.h\""
+          << std::endl;
+      break;
+
+    case kTfLiteCompileStepEval: {
+      const TfLiteEvalTensor* input =
+          tflite::micro::GetEvalInput(context, node, 0);
+      TfLiteEvalTensor* output = tflite::micro::GetEvalOutput(context, node, 0);
+
+      // Only support int8 to int8 conversion for HIFI4
+      if (input->type != kTfLiteInt8 || output->type != kTfLiteInt8) {
+        ofs << "// Softmax compile: only int8 to int8 is supported for HIFI4"
+            << std::endl;
+        return kTfLiteError;
+      }
+
+#if defined(HIFI3) || defined(HIFI4) || defined(HIFI5)
+      TFLITE_DCHECK(node->user_data != nullptr);
+      const XtensaSoftmaxOpData* op_data =
+          static_cast<const XtensaSoftmaxOpData*>(node->user_data);
+
+      const RuntimeShape& input_shape = tflite::micro::GetTensorShape(input);
+      const int trailing_dim = input_shape.DimensionsCount() - 1;
+      const RuntimeShape& output_shape = tflite::micro::GetTensorShape(output);
+      const int outer_size =
+          MatchingFlatSizeSkipDim(input_shape, trailing_dim, output_shape);
+      const int depth =
+          MatchingDim(input_shape, trailing_dim, output_shape, trailing_dim);
+
+      ofs << "{ // HIFI4 softmax int8 to int8" << std::endl;
+
+      // Generate address compilation for input and output data
+      tflite::micro::CompileAddress(
+          ofs, "input_data",
+          tflite::micro::GetTensorData<int8_t>(input));
+      tflite::micro::CompileAddress(
+          ofs, "output_data",
+          tflite::micro::GetTensorData<int8_t>(output));
+
+      // Generate dimension parameters
+      ofs << "const int outer_size = " << outer_size << ";" << std::endl;
+      ofs << "const int depth = " << depth << ";" << std::endl;
+
+      // Generate softmax parameters
+      ofs << "const int diff_min = " << op_data->params.diff_min << ";"
+          << std::endl;
+      ofs << "const int input_left_shift = "
+          << op_data->params.input_left_shift << ";" << std::endl;
+      ofs << "const int input_multiplier = "
+          << op_data->params.input_multiplier << ";" << std::endl;
+
+      // Generate scratch buffer address
+      MicroContext* micro_context = GetMicroContext(context);
+      tflite::micro::CompileAddress(
+          ofs, "p_scratch",
+          micro_context->GetScratchBuffer(op_data->scratch_tensor_index));
+
+      // Generate the softmax computation loop
+      ofs << "for (int i = 0; i < outer_size; ++i) {" << std::endl;
+      ofs << "  int err = xa_nn_vec_softmax_asym8s_asym8s(" << std::endl;
+      ofs << "      reinterpret_cast<int8_t*>(output_data) + i * depth,"
+          << std::endl;
+      ofs << "      reinterpret_cast<const int8_t*>(input_data) + i * depth,"
+          << std::endl;
+      ofs << "      diff_min," << std::endl;
+      ofs << "      input_left_shift," << std::endl;
+      ofs << "      input_multiplier," << std::endl;
+      ofs << "      depth," << std::endl;
+      ofs << "      p_scratch);" << std::endl;
+      ofs << "  if (err != 0) {" << std::endl;
+      ofs << "    printf(\"ERROR: xa_nn_vec_softmax_asym8s_asym8s failed with code %d\\\\n\", err);" << std::endl;
+      ofs << "  }" << std::endl;
+      ofs << "}" << std::endl;
+
+      ofs << "}" << std::endl;
+#else
+      // For non-HIFI platforms, return error
+      ofs << "// HIFI4 softmax compile is only supported on HIFI3/HIFI4/HIFI5 platforms"
+          << std::endl;
+      return kTfLiteError;
+#endif  // defined(HIFI3) || defined(HIFI4) || defined(HIFI5)
+
+      break;
+    }
+
+    default:
+      return kTfLiteError;
+  }
+
+  return kTfLiteOk;
+}
+#endif  // TFLITE_MODEL_COMPILER
+
 TFLMRegistration Register_SOFTMAX() {
+#ifdef TFLITE_MODEL_COMPILER
+  return tflite::micro::CompileOp(XtensaInitSoftmax, XtensaPrepareSoftmax,
+                                  Eval, SoftmaxCompile);
+#else
   return tflite::micro::RegisterOp(XtensaInitSoftmax, XtensaPrepareSoftmax,
                                    Eval);
+#endif
 }
 
 }  // namespace tflite
