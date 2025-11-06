@@ -337,8 +337,171 @@ TfLiteStatus Eval(TfLiteContext* context, TfLiteNode* node) {
 
 }  // namespace
 
+#ifdef TFLITE_MODEL_COMPILER
+TfLiteStatus QuantizeCompile(TfLiteContext* context, TfLiteNode* node,
+                             TfLiteCompileStep step, std::ofstream& ofs) {
+  switch (step) {
+    case kTfLiteCompileStepInclude:
+      ofs << "#include \"tensorflow/lite/micro/kernels/xtensa/xtensa.h\""
+          << std::endl
+          << "#include \"tensorflow/lite/micro/kernels/quantize.h\"" << std::endl
+          << "#include \"tensorflow/lite/kernels/internal/reference/quantize.h\""
+          << std::endl;
+      break;
+
+    case kTfLiteCompileStepEval: {
+      TFLITE_DCHECK(node->user_data != nullptr);
+      auto* op_data = static_cast<OpDataQuantizeReference*>(node->user_data);
+
+      const TfLiteEvalTensor* input =
+          tflite::micro::GetEvalInput(context, node, 0);
+      TfLiteEvalTensor* output = tflite::micro::GetEvalOutput(context, node, 0);
+
+      const int size = ElementCount(*input->dims);
+
+      ofs << "{ // xtensa quantize" << std::endl;
+
+      // Generate runtime data addresses
+      tflite::micro::CompileAddress(ofs, "input_data", input->data.data);
+      tflite::micro::CompileAddress(ofs, "output_data", output->data.data);
+
+      // Generate size and quantization parameters
+      ofs << "const int size = " << size << ";" << std::endl
+          << "const int32_t input_zero_point = " << op_data->input_zero_point
+          << ";" << std::endl
+          << "const int32_t output_zero_point = "
+          << op_data->quantization_params.zero_point << ";" << std::endl
+          << "const int32_t multiplier = "
+          << op_data->requantize_output_multiplier << ";" << std::endl
+          << "const int32_t shift = " << op_data->requantize_output_shift << ";"
+          << std::endl
+          << "const float scale = "
+          << static_cast<float>(op_data->quantization_params.scale) << "f;"
+          << std::endl;
+
+      // Type dispatch based on input and output types
+      if (input->type == kTfLiteUInt8 && output->type == kTfLiteInt8) {
+        // uint8 to int8 using reference
+        ofs << "// uint8 to int8 quantize using reference" << std::endl
+            << "reference_ops::Requantize(" << std::endl
+            << "    reinterpret_cast<const uint8_t*>(input_data), size,"
+            << std::endl
+            << "    multiplier, shift, input_zero_point, output_zero_point,"
+            << std::endl
+            << "    reinterpret_cast<int8_t*>(output_data));" << std::endl;
+      } else if (input->type == kTfLiteInt8 && output->type == kTfLiteUInt8) {
+        // int8 to uint8 using reference
+        ofs << "// int8 to uint8 quantize using reference" << std::endl
+            << "reference_ops::Requantize(" << std::endl
+            << "    reinterpret_cast<const int8_t*>(input_data), size,"
+            << std::endl
+            << "    multiplier, shift, input_zero_point, output_zero_point,"
+            << std::endl
+            << "    reinterpret_cast<uint8_t*>(output_data));" << std::endl;
+      } else if (input->type == kTfLiteInt8 && output->type == kTfLiteInt8) {
+        // int8 to int8 using nnlib
+        ofs << "// int8 to int8 requantize using nnlib" << std::endl
+            << "xa_nn_elm_requantize_asym8s_asym8s(" << std::endl
+            << "    reinterpret_cast<int8_t*>(output_data)," << std::endl
+            << "    reinterpret_cast<const int8_t*>(input_data)," << std::endl
+            << "    input_zero_point, output_zero_point," << std::endl
+            << "    shift, multiplier, size);" << std::endl;
+      } else if (input->type == kTfLiteInt8 && output->type == kTfLiteInt16) {
+        // int8 to int16 using reference
+        ofs << "// int8 to int16 quantize using reference" << std::endl
+            << "reference_ops::Requantize(" << std::endl
+            << "    reinterpret_cast<const int8_t*>(input_data), size,"
+            << std::endl
+            << "    multiplier, shift, input_zero_point, output_zero_point,"
+            << std::endl
+            << "    reinterpret_cast<int16_t*>(output_data));" << std::endl;
+      } else if (input->type == kTfLiteInt8 && output->type == kTfLiteInt32) {
+        // int8 to int32 using nnlib
+        ofs << "// int8 to int32 requantize using nnlib" << std::endl
+            << "xa_nn_elm_requantize_asym8s_asym32s(" << std::endl
+            << "    reinterpret_cast<int32_t*>(output_data)," << std::endl
+            << "    reinterpret_cast<const int8_t*>(input_data)," << std::endl
+            << "    input_zero_point, output_zero_point," << std::endl
+            << "    shift, multiplier, size);" << std::endl;
+      } else if (input->type == kTfLiteInt16 && output->type == kTfLiteInt8) {
+        // int16 to int8 using nnlib
+        ofs << "// int16 to int8 requantize using nnlib" << std::endl
+            << "xa_nn_elm_requantize_asym16s_asym8s(" << std::endl
+            << "    reinterpret_cast<int8_t*>(output_data)," << std::endl
+            << "    reinterpret_cast<const int16_t*>(input_data)," << std::endl
+            << "    input_zero_point, output_zero_point," << std::endl
+            << "    shift, multiplier, size);" << std::endl;
+      } else if (input->type == kTfLiteInt16 && output->type == kTfLiteInt16) {
+        // int16 to int16 using nnlib
+        ofs << "// int16 to int16 requantize using nnlib" << std::endl
+            << "xa_nn_elm_requantize_asym16s_asym16s(" << std::endl
+            << "    reinterpret_cast<int16_t*>(output_data)," << std::endl
+            << "    reinterpret_cast<const int16_t*>(input_data)," << std::endl
+            << "    input_zero_point, output_zero_point," << std::endl
+            << "    shift, multiplier, size);" << std::endl;
+      } else if (input->type == kTfLiteInt16 && output->type == kTfLiteInt32) {
+        // int16 to int32 using nnlib
+        ofs << "// int16 to int32 requantize using nnlib" << std::endl
+            << "xa_nn_elm_requantize_asym16s_asym32s(" << std::endl
+            << "    reinterpret_cast<int32_t*>(output_data)," << std::endl
+            << "    reinterpret_cast<const int16_t*>(input_data)," << std::endl
+            << "    input_zero_point, output_zero_point," << std::endl
+            << "    shift, multiplier, size);" << std::endl;
+      } else if (input->type == kTfLiteInt32 && output->type == kTfLiteInt8) {
+        // int32 to int8 using reference
+        ofs << "// int32 to int8 quantize using reference" << std::endl
+            << "reference_ops::Requantize(" << std::endl
+            << "    reinterpret_cast<const int32_t*>(input_data), size,"
+            << std::endl
+            << "    multiplier, shift, input_zero_point, output_zero_point,"
+            << std::endl
+            << "    reinterpret_cast<int8_t*>(output_data));" << std::endl;
+      } else if (input->type == kTfLiteInt32 && output->type == kTfLiteInt16) {
+        // int32 to int16 using reference
+        ofs << "// int32 to int16 quantize using reference" << std::endl
+            << "reference_ops::Requantize(" << std::endl
+            << "    reinterpret_cast<const int32_t*>(input_data), size,"
+            << std::endl
+            << "    multiplier, shift, input_zero_point, output_zero_point,"
+            << std::endl
+            << "    reinterpret_cast<int16_t*>(output_data));" << std::endl;
+      } else if (input->type == kTfLiteFloat32 && output->type == kTfLiteInt8) {
+        // float32 to int8 quantize using nnlib with VFPU (HIFI4 optimized, no conditional compilation)
+        ofs << "// float32 to int8 quantize using nnlib with VFPU" << std::endl
+            << "xa_nn_elm_quantize_f32_asym8s(" << std::endl
+            << "    reinterpret_cast<int8_t*>(output_data)," << std::endl
+            << "    reinterpret_cast<const float*>(input_data)," << std::endl
+            << "    scale, output_zero_point, size);" << std::endl;
+      } else {
+        // Unsupported type combination
+        ofs << "// Unsupported type combination: " << TfLiteTypeGetName(input->type)
+            << " to " << TfLiteTypeGetName(output->type) << std::endl
+            << "return kTfLiteError;" << std::endl;
+      }
+
+      ofs << "}" << std::endl;
+
+    } break;
+
+    default:
+      return kTfLiteError;
+  }
+
+  return kTfLiteOk;
+}
+#endif  // TFLITE_MODEL_COMPILER
+
 TFLMRegistration Register_QUANTIZE() {
+#ifdef TFLITE_MODEL_COMPILER
+  return tflite::micro::CompileOp(Init, Prepare, Eval, QuantizeCompile);
+#else
   return tflite::micro::RegisterOp(Init, Prepare, Eval);
+#endif
+}
+
+// Type-specific registration function for FLOAT32 to INT8 quantization
+TFLMRegistration Register_QUANTIZE_FLOAT32_INT8() {
+  return Register_QUANTIZE();
 }
 
 }  // namespace tflite
