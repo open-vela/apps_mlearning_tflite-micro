@@ -292,6 +292,105 @@ TfLiteStatus MaxEvalQuantizedHifi(TfLiteContext* context, TfLiteNode* node,
 
 #endif  // defined(HIFI5)
 
+#if defined(TFLITE_MODEL_COMPILER)
+// Common pooling compile function for non-HIFI5 platforms (HIFI3, HIFI4, etc.)
+TfLiteStatus CommonCompileInt8(TfLiteContext* context, TfLiteNode* node,
+                         TfLiteCompileStep step, std::ofstream& ofs,
+                         int type) {  // type: 0=avgpool, 1=maxpool
+  switch (step) {
+    case kTfLiteCompileStepInclude:
+      ofs << "#include \"tensorflow/lite/kernels/internal/reference/integer_ops/pooling.h\""
+          << std::endl
+          << "#include \"tensorflow/lite/micro/kernels/pooling.h\"" << std::endl;
+      break;
+
+    case kTfLiteCompileStepEval: {
+      TFLITE_DCHECK(node->builtin_data != nullptr);
+      auto* params = reinterpret_cast<TfLitePoolParams*>(node->builtin_data);
+
+      TFLITE_DCHECK(node->user_data != nullptr);
+      const OpDataPooling* data =
+          static_cast<const OpDataPooling*>(node->user_data);
+
+      const TfLiteEvalTensor* input =
+          tflite::micro::GetEvalInput(context, node, kPoolingInputTensor);
+      TfLiteEvalTensor* output =
+          tflite::micro::GetEvalOutput(context, node, kPoolingOutputTensor);
+
+      TFLITE_DCHECK(input->type == kTfLiteInt8);
+
+      ofs << "{ // reference pool int8" << std::endl;
+
+      // Generate data addresses
+      tflite::micro::CompileAddress(ofs, "input_data", input->data.data);
+      tflite::micro::CompileAddress(ofs, "output_data", output->data.data);
+
+      // Generate pooling parameters
+      ofs << "tflite::PoolParams op_params;" << std::endl;
+      ofs << "op_params.stride_height = " << params->stride_height << ";" << std::endl;
+      ofs << "op_params.stride_width = " << params->stride_width << ";" << std::endl;
+      ofs << "op_params.filter_height = " << params->filter_height << ";" << std::endl;
+      ofs << "op_params.filter_width = " << params->filter_width << ";" << std::endl;
+      ofs << "op_params.padding_values.height = "
+          << data->padding.height << ";" << std::endl;
+      ofs << "op_params.padding_values.width = "
+          << data->padding.width << ";" << std::endl;
+      ofs << "op_params.quantized_activation_min = "
+          << data->activation_min << ";" << std::endl;
+      ofs << "op_params.quantized_activation_max = "
+          << data->activation_max << ";" << std::endl;
+
+      // Generate runtime shape data
+      ofs << "const int32_t input_dims[] = {";
+      for (int i = 0; i < input->dims->size; ++i) {
+        if (i > 0) ofs << ", ";
+        ofs << input->dims->data[i];
+      }
+      ofs << "};" << std::endl;
+
+      ofs << "const int32_t output_dims[] = {";
+      for (int i = 0; i < output->dims->size; ++i) {
+        if (i > 0) ofs << ", ";
+        ofs << output->dims->data[i];
+      }
+      ofs << "};" << std::endl;
+
+      // Generate pooling function call
+      if (type) {
+        ofs << "tflite::reference_integer_ops::MaxPool(";
+      } else {
+        ofs << "tflite::reference_integer_ops::AveragePool(";
+      }
+      ofs << "op_params," << std::endl;
+      ofs << "    tflite::RuntimeShape(" << input->dims->size
+          << ", input_dims), reinterpret_cast<const int8_t*>(input_data)," << std::endl;
+      ofs << "    tflite::RuntimeShape(" << output->dims->size
+          << ", output_dims), reinterpret_cast<int8_t*>(output_data));" << std::endl;
+
+      ofs << "}" << std::endl;
+
+    } break;
+
+    default:
+      return kTfLiteError;
+  }
+
+  return kTfLiteOk;
+}
+
+// Average pooling compile function
+TfLiteStatus AverageCompileInt8(TfLiteContext* context, TfLiteNode* node,
+                         TfLiteCompileStep step, std::ofstream& ofs) {
+  return CommonCompileInt8(context, node, step, ofs, 0);
+}
+
+// Max pooling compile function
+TfLiteStatus MaxCompileInt8(TfLiteContext* context, TfLiteNode* node,
+                         TfLiteCompileStep step, std::ofstream& ofs) {
+  return CommonCompileInt8(context, node, step, ofs, 1);
+}
+#endif
+
 void* XtensaPoolingInit(TfLiteContext* context, const char* buffer,
                         size_t length) {
   TFLITE_DCHECK(context->AllocatePersistentBuffer != nullptr);
@@ -317,8 +416,13 @@ TFLMRegistration Register_AVERAGE_POOL_2D_INT8() {
   return tflite::micro::RegisterOp(XtensaPoolingInit, AvgPoolingPrepareVision,
                                    AverageEvalInt8);
 #else
-  return tflite::micro::RegisterOp(XtensaPoolingInit, PoolingPrepare,
+  #ifdef TFLITE_MODEL_COMPILER
+    return tflite::micro::CompileOp(XtensaPoolingInit, PoolingPrepare,
+                                   AverageEvalInt8, AverageCompileInt8);
+  #else
+    return tflite::micro::RegisterOp(XtensaPoolingInit, PoolingPrepare,
                                    AverageEvalInt8);
+  #endif
 #endif
 }
 
@@ -330,8 +434,13 @@ TFLMRegistration Register_MAX_POOL_2D_INT8() {
   return tflite::micro::RegisterOp(XtensaPoolingInit, MaxPoolingPrepareVision,
                                    MaxEvalInt8);
 #else
-  return tflite::micro::RegisterOp(XtensaPoolingInit, PoolingPrepare,
+  #ifdef TFLITE_MODEL_COMPILER
+    return tflite::micro::CompileOp(XtensaPoolingInit, PoolingPrepare,
+                                   MaxEvalInt8, MaxCompileInt8);
+  #else
+    return tflite::micro::RegisterOp(XtensaPoolingInit, PoolingPrepare,
                                    MaxEvalInt8);
+  #endif
 #endif
 }
 
