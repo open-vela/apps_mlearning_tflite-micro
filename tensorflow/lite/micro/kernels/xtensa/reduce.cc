@@ -116,9 +116,29 @@ TfLiteStatus XtensaEvalSum(TfLiteContext* context, TfLiteNode* node) {
   return EvalSumHelper(context, node, op_data);
 }
 
+#ifdef TFLITE_MODEL_COMPILER
+TfLiteStatus XtensaCompileMean(TfLiteContext* context, TfLiteNode* node,
+                               TfLiteCompileStep step, std::ofstream& ofs) {
+  OpDataReduce* op_data =
+      &(static_cast<XtensaReduceOpData*>(node->user_data)->reference_op_data);
+  // Reuse the reference implementation's compile function
+  return CompileMeanHelperInt8(context, node, op_data, step, ofs);
+}
+#endif  // TFLITE_MODEL_COMPILER
+
 TFLMRegistration Register_MEAN() {
+#ifdef TFLITE_MODEL_COMPILER
+  return tflite::micro::CompileOp(XtensaInitReduce, XtensaPrepareMeanOrSum,
+                                  XtensaEvalMean, XtensaCompileMean);
+#else
   return tflite::micro::RegisterOp(XtensaInitReduce, XtensaPrepareMeanOrSum,
                                    XtensaEvalMean);
+#endif
+}
+
+// Type-specific registration function for INT8 MEAN operation
+TFLMRegistration Register_MEAN_INT8() {
+  return Register_MEAN();
 }
 
 TFLMRegistration Register_REDUCE_MAX() {
