@@ -141,8 +141,116 @@ TfLiteStatus Eval(TfLiteContext* context, TfLiteNode* node) {
 }
 }  // namespace
 
+#ifdef TFLITE_MODEL_COMPILER
+TfLiteStatus StridedSliceCompile(TfLiteContext* context, TfLiteNode* node,
+                                 TfLiteCompileStep step, std::ofstream& ofs) {
+  switch (step) {
+    case kTfLiteCompileStepInclude:
+      ofs << "#include \"tensorflow/lite/kernels/internal/reference/strided_slice.h\""
+          << std::endl;
+      break;
+
+    case kTfLiteCompileStepEval: {
+      const TfLiteEvalTensor* input =
+          tflite::micro::GetEvalInput(context, node, kStridedSliceInputTensor);
+      TfLiteEvalTensor* output =
+          tflite::micro::GetEvalOutput(context, node, kStridedSliceOutputTensor);
+      TfLiteType output_type = output->type;
+
+      // Only support int8 for now
+      if (output_type != kTfLiteInt8) {
+        ofs << "// StridedSlice compile: only int8 is supported" << std::endl;
+        return kTfLiteError;
+      }
+
+      TFLITE_DCHECK(node->user_data != nullptr);
+      const StridedSliceParams* op_params =
+          static_cast<const StridedSliceParams*>(node->user_data);
+
+      ofs << "{ // strided slice int8" << std::endl;
+
+      // Generate input data address
+      tflite::micro::CompileAddress(
+          ofs, "input_data",
+          tflite::micro::GetTensorData<int8_t>(input));
+
+      // Generate output data address
+      tflite::micro::CompileAddress(
+          ofs, "output_data",
+          tflite::micro::GetTensorData<int8_t>(output));
+
+      // Generate input shape
+      const RuntimeShape& input_shape = tflite::micro::GetTensorShape(input);
+      ofs << "static const int32_t input_dims[] = {";
+      for (int i = 0; i < input_shape.DimensionsCount(); ++i) {
+        if (i > 0) ofs << ", ";
+        ofs << input_shape.Dims(i);
+      }
+      ofs << "};" << std::endl;
+
+      // Generate output shape
+      const RuntimeShape& output_shape = tflite::micro::GetTensorShape(output);
+      ofs << "static const int32_t output_dims[] = {";
+      for (int i = 0; i < output_shape.DimensionsCount(); ++i) {
+        if (i > 0) ofs << ", ";
+        ofs << output_shape.Dims(i);
+      }
+      ofs << "};" << std::endl;
+
+      // Generate StridedSliceParams (zero-initialize to avoid undefined behavior)
+      ofs << "tflite::StridedSliceParams params = {};" << std::endl;
+      ofs << "params.start_indices_count = " << static_cast<int>(op_params->start_indices_count) << ";" << std::endl;
+      ofs << "params.start_indices[0] = " << op_params->start_indices[0] << ";" << std::endl;
+      ofs << "params.start_indices[1] = " << op_params->start_indices[1] << ";" << std::endl;
+      ofs << "params.start_indices[2] = " << op_params->start_indices[2] << ";" << std::endl;
+      ofs << "params.start_indices[3] = " << op_params->start_indices[3] << ";" << std::endl;
+      ofs << "params.start_indices[4] = " << op_params->start_indices[4] << ";" << std::endl;
+      ofs << "params.stop_indices_count = " << static_cast<int>(op_params->stop_indices_count) << ";" << std::endl;
+      ofs << "params.stop_indices[0] = " << op_params->stop_indices[0] << ";" << std::endl;
+      ofs << "params.stop_indices[1] = " << op_params->stop_indices[1] << ";" << std::endl;
+      ofs << "params.stop_indices[2] = " << op_params->stop_indices[2] << ";" << std::endl;
+      ofs << "params.stop_indices[3] = " << op_params->stop_indices[3] << ";" << std::endl;
+      ofs << "params.stop_indices[4] = " << op_params->stop_indices[4] << ";" << std::endl;
+      ofs << "params.strides_count = " << static_cast<int>(op_params->strides_count) << ";" << std::endl;
+      ofs << "params.strides[0] = " << op_params->strides[0] << ";" << std::endl;
+      ofs << "params.strides[1] = " << op_params->strides[1] << ";" << std::endl;
+      ofs << "params.strides[2] = " << op_params->strides[2] << ";" << std::endl;
+      ofs << "params.strides[3] = " << op_params->strides[3] << ";" << std::endl;
+      ofs << "params.strides[4] = " << op_params->strides[4] << ";" << std::endl;
+      ofs << "params.begin_mask = " << op_params->begin_mask << ";" << std::endl;
+      ofs << "params.ellipsis_mask = " << op_params->ellipsis_mask << ";" << std::endl;
+      ofs << "params.end_mask = " << op_params->end_mask << ";" << std::endl;
+      ofs << "params.new_axis_mask = " << op_params->new_axis_mask << ";" << std::endl;
+      ofs << "params.shrink_axis_mask = " << op_params->shrink_axis_mask << ";" << std::endl;
+      ofs << "params.offset = " << (op_params->offset ? "true" : "false") << ";" << std::endl;
+
+      // Call reference strided slice
+      ofs << "tflite::reference_ops::StridedSlice(params," << std::endl;
+      ofs << "    tflite::RuntimeShape(" << input_shape.DimensionsCount()
+          << ", input_dims)," << std::endl;
+      ofs << "    reinterpret_cast<const int8_t*>(input_data)," << std::endl;
+      ofs << "    tflite::RuntimeShape(" << output_shape.DimensionsCount()
+          << ", output_dims)," << std::endl;
+      ofs << "    reinterpret_cast<int8_t*>(output_data));" << std::endl;
+
+      ofs << "}" << std::endl;
+    } break;
+
+    default:
+      return kTfLiteError;
+  }
+
+  return kTfLiteOk;
+}
+#endif  // TFLITE_MODEL_COMPILER
+
 TFLMRegistration Register_STRIDED_SLICE() {
+#ifdef TFLITE_MODEL_COMPILER
+  return tflite::micro::CompileOp(StridedSliceInit, StridedSlicePrepare, Eval,
+                                  StridedSliceCompile);
+#else
   return tflite::micro::RegisterOp(StridedSliceInit, StridedSlicePrepare, Eval);
+#endif
 }
 
 }  // namespace tflite
