@@ -252,9 +252,133 @@ TfLiteStatus ConcatenationEval(TfLiteContext* context, TfLiteNode* node) {
 
 }  // namespace
 
+#ifdef TFLITE_MODEL_COMPILER
+TfLiteStatus ConcatenationCompile(TfLiteContext* context, TfLiteNode* node,
+                                  TfLiteCompileStep step, std::ofstream& ofs) {
+  switch (step) {
+    case kTfLiteCompileStepInclude:
+      ofs << "#include \"tensorflow/lite/kernels/internal/reference/concatenation.h\""
+          << std::endl
+          << "#include <cstring>" << std::endl;
+      break;
+
+    case kTfLiteCompileStepEval: {
+      const TfLiteEvalTensor* output_tensor =
+          tflite::micro::GetEvalOutput(context, node, kOutputTensor);
+      TfLiteType output_type = output_tensor->type;
+
+      // Only support int8 for now
+      if (output_type != kTfLiteInt8) {
+        ofs << "// Concatenation compile: only int8 is supported" << std::endl;
+        return kTfLiteError;
+      }
+
+      TFLITE_DCHECK(node->user_data != nullptr);
+      const OpData* data = static_cast<const OpData*>(node->user_data);
+
+      const int num_inputs = node->inputs->size;
+
+      ofs << "{ // concatenation int8" << std::endl;
+
+      // Generate input data addresses
+      // First, generate individual address variables for each input
+      for (int i = 0; i < num_inputs; ++i) {
+        const TfLiteEvalTensor* input =
+            tflite::micro::GetEvalInput(context, node, i);
+        std::string var_name = "input_data_" + std::to_string(i);
+        tflite::micro::CompileAddress(
+            ofs, var_name.c_str(),
+            tflite::micro::GetTensorData<int8_t>(input));
+      }
+
+      // Then create the input_data array using these variables
+      ofs << "static const int8_t* input_data[" << num_inputs << "] = {";
+      for (int i = 0; i < num_inputs; ++i) {
+        if (i > 0) ofs << ", ";
+        ofs << "reinterpret_cast<const int8_t*>(input_data_" << i << ")";
+      }
+      ofs << "};" << std::endl;
+
+      // Generate output data address
+      tflite::micro::CompileAddress(
+          ofs, "output_data",
+          tflite::micro::GetTensorData<int8_t>(output_tensor));
+
+      // Generate input shapes
+      for (int i = 0; i < num_inputs; ++i) {
+        const TfLiteEvalTensor* input =
+            tflite::micro::GetEvalInput(context, node, i);
+        const RuntimeShape& input_shape = tflite::micro::GetTensorShape(input);
+        ofs << "static const int32_t input_dims_" << i << "[] = {";
+        for (int j = 0; j < input_shape.DimensionsCount(); ++j) {
+          if (j > 0) ofs << ", ";
+          ofs << input_shape.Dims(j);
+        }
+        ofs << "};" << std::endl;
+      }
+
+      // Generate RuntimeShape objects for inputs
+      ofs << "tflite::RuntimeShape input_shapes[" << num_inputs << "];" << std::endl;
+      for (int i = 0; i < num_inputs; ++i) {
+        const TfLiteEvalTensor* input =
+            tflite::micro::GetEvalInput(context, node, i);
+        const RuntimeShape& input_shape = tflite::micro::GetTensorShape(input);
+        ofs << "input_shapes[" << i << "].ReplaceWith("
+            << input_shape.DimensionsCount() << ", input_dims_" << i << ");"
+            << std::endl;
+      }
+
+      // Generate shape pointer array
+      ofs << "const tflite::RuntimeShape* input_shapes_ptr[" << num_inputs
+          << "];" << std::endl;
+      ofs << "for (int i = 0; i < " << num_inputs << "; ++i) {" << std::endl;
+      ofs << "  input_shapes_ptr[i] = &input_shapes[i];" << std::endl;
+      ofs << "}" << std::endl;
+
+      // Generate output shape
+      const RuntimeShape& output_shape =
+          tflite::micro::GetTensorShape(output_tensor);
+      ofs << "static const int32_t output_dims[] = {";
+      for (int i = 0; i < output_shape.DimensionsCount(); ++i) {
+        if (i > 0) ofs << ", ";
+        ofs << output_shape.Dims(i);
+      }
+      ofs << "};" << std::endl;
+
+      // Generate ConcatenationParams
+      ofs << "tflite::ConcatenationParams params;" << std::endl;
+      ofs << "params.axis = " << static_cast<int>(data->params.axis) << ";" << std::endl;
+      ofs << "params.inputs_count = " << data->params.inputs_count << ";"
+          << std::endl;
+
+      // Call reference concatenation
+      ofs << "tflite::reference_ops::Concatenation(params," << std::endl;
+      ofs << "    input_shapes_ptr," << std::endl;
+      ofs << "    input_data," << std::endl;
+      ofs << "    tflite::RuntimeShape(" << output_shape.DimensionsCount()
+          << ", output_dims)," << std::endl;
+      ofs << "    reinterpret_cast<int8_t*>(output_data));" << std::endl;
+
+      ofs << "}" << std::endl;
+
+    } break;
+
+    default:
+      return kTfLiteError;
+  }
+
+  return kTfLiteOk;
+}
+#endif  // TFLITE_MODEL_COMPILER
+
 TFLMRegistration Register_CONCATENATION() {
+#ifdef TFLITE_MODEL_COMPILER
+  return tflite::micro::CompileOp(ConcatenationInit, ConcatenationPrepare,
+                                  ConcatenationEval, ConcatenationCompile);
+#else
   return tflite::micro::RegisterOp(ConcatenationInit, ConcatenationPrepare,
                                    ConcatenationEval);
+#endif
 }
 
 }  // namespace tflite
