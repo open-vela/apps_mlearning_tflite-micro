@@ -48,11 +48,19 @@ uint32_t GetCurrentTimeTicks() { return 0; }
 
 #else  // defined(TF_LITE_USE_CTIME)
 
-// For platforms that support ctime, we implment the micro_time interface in
-// this central location.
-uint32_t ticks_per_second() { return CLOCKS_PER_SEC; }
+uint32_t ticks_per_second() {
+    return 1000000;  // 1微秒 = 1 tick
+}
 
-uint32_t GetCurrentTimeTicks() { return clock(); }
+uint32_t GetCurrentTimeTicks() {
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    // 将时间转换为微秒，并确保在 uint32_t 范围内
+    uint64_t micros = static_cast<uint64_t>(ts.tv_sec) * 1000000ULL +
+                      static_cast<uint64_t>(ts.tv_nsec) / 1000ULL;
+    return static_cast<uint32_t>(micros);
+}
+
 #endif
 
 }  // namespace tflite

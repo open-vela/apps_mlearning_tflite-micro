@@ -33,11 +33,19 @@ limitations under the License.
 #include "tensorflow/lite/micro/debug_log.h"
 
 #ifndef TF_LITE_STRIP_ERROR_STRINGS
-#include <syslog.h>
+#include <cstdio>
 #endif
 
 extern "C" void DebugLog(const char* format, va_list args) {
 #ifndef TF_LITE_STRIP_ERROR_STRINGS
-  vsyslog(LOG_INFO, format, args);
+  vfprintf(stderr, format, args);
 #endif
 }
+
+#ifndef TF_LITE_STRIP_ERROR_STRINGS
+// Only called from MicroVsnprintf (micro_log.h)
+extern "C" int DebugVsnprintf(char* buffer, size_t buf_size, const char* format,
+                              va_list vlist) {
+  return vsnprintf(buffer, buf_size, format, vlist);
+}
+#endif

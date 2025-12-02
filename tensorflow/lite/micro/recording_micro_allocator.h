@@ -33,6 +33,8 @@ enum class RecordedAllocationType {
   kTfLiteTensorVariableBufferData,
   kNodeAndRegistrationArray,
   kOpData,
+
+  kNumAllocationTypes,  // must be last
 };
 
 // Container for holding information about allocation recordings by a given

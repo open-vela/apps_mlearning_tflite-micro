@@ -14,9 +14,11 @@ limitations under the License.
 ==============================================================================*/
 #include "tensorflow/lite/micro/micro_profiler.h"
 
+#include <algorithm>
 #include <cinttypes>
 #include <cstdint>
 #include <cstring>
+#include <iterator>
 
 #include "tensorflow/lite/kernels/internal/compatibility.h"
 #include "tensorflow/lite/micro/micro_log.h"
@@ -120,4 +122,11 @@ int MicroProfiler::FindExistingOrNextPosition(const char* tag_name) {
   }
   return pos < num_events_ ? pos : -1;
 }
+
+void MicroProfiler::ClearEvents() {
+  std::fill_n(std::begin(total_ticks_per_tag), num_events_, TicksPerTag{});
+
+  num_events_ = 0;
+}
+
 }  // namespace tflite

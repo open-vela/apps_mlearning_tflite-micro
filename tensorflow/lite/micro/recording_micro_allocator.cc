@@ -78,6 +78,8 @@ RecordedAllocation RecordingMicroAllocator::GetRecordedAllocation(
       return recorded_node_and_registration_array_data_;
     case RecordedAllocationType::kOpData:
       return recorded_op_data_;
+    default:
+      break;
   }
   MicroPrintf("Invalid allocation type supplied: %d", allocation_type);
   return RecordedAllocation();

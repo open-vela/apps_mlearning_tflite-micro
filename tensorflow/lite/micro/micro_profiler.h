@@ -45,7 +45,7 @@ class MicroProfiler : public MicroProfilerInterface {
   virtual void EndEvent(uint32_t event_handle) override;
 
   // Clears all the events that have been currently profiled.
-  void ClearEvents() { num_events_ = 0; }
+  void ClearEvents();
 
   // Returns the sum of the ticks taken across all the events. This number
   // is only meaningful if all of the events are disjoint (the end time of
