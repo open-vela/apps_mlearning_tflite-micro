@@ -13,3 +13,6 @@ gen
 
 # Ignore the `external` symlink added by `bazel-compile-commands-extractor`
 /external
+
+# Ignore benchmark generated files
+genfiles

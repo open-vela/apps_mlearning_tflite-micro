@@ -141,8 +141,10 @@ def main():
   else:
     # Deduplicate inputs to prevent duplicate generated files (ODR issue).
     for input_file in list(dict.fromkeys(args.inputs)):
+      # Use only the base filename (without path) when constructing output path
+      input_basename = os.path.basename(input_file)
       output_base_fname = os.path.join(args.output,
-                                       os.path.splitext(input_file)[0])
+                                       os.path.splitext(input_basename)[0])
       if input_file.endswith('.tflite'):
         output_base_fname = output_base_fname + '_model_data'
       elif input_file.endswith('.bmp'):
